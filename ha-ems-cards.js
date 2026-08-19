@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.2.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -25,6 +25,8 @@ const SOLAR_DEFAULTS = {
   export_color: "#0a84ff",
   import_color: "#ff453a",
   ev_color: "#ff9f0a",
+  consumer_1_color: "#5e5ce6",
+  consumer_2_color: "#64d2ff",
   inverter_size: 2.5,
 };
 
@@ -39,6 +41,7 @@ const TRANSLATIONS = {
     usage: "Usage",
     ev: "EV",
     forecast: "Forecast",
+    today: "Today",
     unavailable: "Unavailable",
     unknown: "Unknown",
     empty: "Add entities in the card editor.",
@@ -55,6 +58,7 @@ const TRANSLATIONS = {
     usage: "Verbruik",
     ev: "EV",
     forecast: "Verwachting",
+    today: "Vandaag",
     unavailable: "Niet beschikbaar",
     unknown: "Onbekend",
     empty: "Voeg entiteiten toe in de kaart-editor.",
@@ -331,6 +335,7 @@ class EmsOverviewCard extends EmsBaseCard {
         overflow: hidden; margin-top: 6px;
       }
       .solar-ev-fill { height: 100%; width: 0%; background: var(--ems-ev); transition: width .5s ease; }
+      .solar-today { font-size: .72rem; opacity: .6; margin-top: 6px; cursor: pointer; }
       .solar-legend {
         display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: .72rem;
       }
@@ -394,13 +399,42 @@ class EmsOverviewCard extends EmsBaseCard {
 
       solar.append(head, track);
 
-      if (cfg.ev_entity) {
-        const evTrack = document.createElement("div");
-        evTrack.className = "solar-ev-track";
-        this._solarEvFill = document.createElement("div");
-        this._solarEvFill.className = "solar-ev-fill";
-        evTrack.appendChild(this._solarEvFill);
-        solar.appendChild(evTrack);
+      this._subBars = [];
+      const subBarDefs = [
+        { key: "ev", entity: cfg.ev_entity, color: "var(--ems-ev)", label: this._t("ev") },
+        {
+          key: "consumer_1",
+          entity: cfg.consumer_1_entity,
+          color: toCssColor(cfg.consumer_1_color, SOLAR_DEFAULTS.consumer_1_color),
+          label: cfg.consumer_1_name || this._friendlyName(cfg.consumer_1_entity),
+        },
+        {
+          key: "consumer_2",
+          entity: cfg.consumer_2_entity,
+          color: toCssColor(cfg.consumer_2_color, SOLAR_DEFAULTS.consumer_2_color),
+          label: cfg.consumer_2_name || this._friendlyName(cfg.consumer_2_entity),
+        },
+      ].filter((def) => def.entity);
+
+      for (const def of subBarDefs) {
+        const subTrack = document.createElement("div");
+        subTrack.className = "solar-ev-track";
+        const fill = document.createElement("div");
+        fill.className = "solar-ev-fill";
+        fill.style.background = def.color;
+        subTrack.appendChild(fill);
+        subTrack.addEventListener("click", () => this._fireMoreInfo(def.entity));
+        solar.appendChild(subTrack);
+        this._subBars.push({ ...def, fill });
+      }
+
+      if (cfg.production_history_entity) {
+        this._todayEl = document.createElement("div");
+        this._todayEl.className = "solar-today";
+        this._todayEl.addEventListener("click", () =>
+          this._fireMoreInfo(cfg.production_history_entity)
+        );
+        solar.appendChild(this._todayEl);
       }
 
       if (cfg.show_solar_legend !== false) {
@@ -408,18 +442,18 @@ class EmsOverviewCard extends EmsBaseCard {
         legend.className = "solar-legend";
         this._legendEls = {};
         const legendDefs = [
-          { key: "production", color: "var(--ems-solar)", entity: cfg.production_entity },
-          { key: "usage", color: "var(--ems-text)", entity: cfg.self_consumption_entity },
-          { key: "imported", color: "var(--ems-import)", entity: cfg.grid_power_entity },
-          { key: "exported", color: "var(--ems-export)", entity: cfg.grid_power_entity },
-          { key: "ev", color: "var(--ems-ev)", entity: cfg.ev_entity },
+          { key: "production", color: "var(--ems-solar)", entity: cfg.production_entity, label: this._t("production") },
+          { key: "usage", color: "var(--ems-text)", entity: cfg.self_consumption_entity, label: this._t("usage") },
+          { key: "imported", color: "var(--ems-import)", entity: cfg.grid_power_entity, label: this._t("imported") },
+          { key: "exported", color: "var(--ems-export)", entity: cfg.grid_power_entity, label: this._t("exported") },
+          ...this._subBars.map((bar) => ({ key: bar.key, color: bar.color, entity: bar.entity, label: bar.label })),
         ].filter((def) => def.entity);
         for (const def of legendDefs) {
           const item = document.createElement("div");
           const dot = document.createElement("i");
           dot.style.background = def.color;
           const label = document.createElement("span");
-          label.textContent = this._t(def.key);
+          label.textContent = def.label;
           const value = document.createElement("b");
           item.append(dot, label, value);
           item.addEventListener("click", () => this._fireMoreInfo(def.entity));
@@ -568,7 +602,6 @@ class EmsOverviewCard extends EmsBaseCard {
         ? this._power(cfg.self_consumption_entity)
         : Math.max(production - exported + imported, 0);
       const selfUse = Math.max(production - exported, 0);
-      const evPower = this._power(cfg.ev_entity);
 
       const percentage = (watts) => Math.max(0, Math.min(100, (watts / scale) * 100));
       this._solarSegs.self.style.width = `${percentage(selfUse)}%`;
@@ -579,8 +612,14 @@ class EmsOverviewCard extends EmsBaseCard {
       if (this._solarForecast) {
         this._solarForecast.style.left = `${percentage(this._power(cfg.forecast_entity))}%`;
       }
-      if (this._solarEvFill) {
-        this._solarEvFill.style.width = `${percentage(evPower)}%`;
+      for (const bar of this._subBars) {
+        bar.fill.style.width = `${percentage(this._power(bar.entity))}%`;
+      }
+      if (this._todayEl) {
+        this._todayEl.textContent = `${this._t("today")}: ${this._formatValue(
+          cfg.production_history_entity,
+          Number(cfg.energy_decimals) ?? 1
+        )}`;
       }
       if (this._legendEls) {
         const values = {
@@ -588,8 +627,10 @@ class EmsOverviewCard extends EmsBaseCard {
           usage,
           imported,
           exported,
-          ev: evPower,
         };
+        for (const bar of this._subBars) {
+          values[bar.key] = this._power(bar.entity);
+        }
         for (const [key, el] of Object.entries(this._legendEls)) {
           el.textContent = this._formatPower(values[key] ?? 0);
         }
@@ -754,6 +795,13 @@ const LABELS = {
   export_color: "Kleur export",
   import_color: "Kleur import",
   ev_color: "Kleur laadpaal",
+  consumer_1_entity: "Verbruiker 1 (sensor)",
+  consumer_1_name: "Naam verbruiker 1",
+  consumer_1_color: "Kleur verbruiker 1",
+  consumer_2_entity: "Verbruiker 2 (sensor)",
+  consumer_2_name: "Naam verbruiker 2",
+  consumer_2_color: "Kleur verbruiker 2",
+  production_history_entity: "Opbrengst vandaag (kWh)",
 };
 
 /** Editor met een herhaalbare lijst van tegels/apparaten. */
@@ -923,7 +971,12 @@ class EmsOverviewCardEditor extends EmsRepeaterEditor {
             { name: "grid_power_entity", selector: { entity: { domain: ["sensor"] } } },
             { name: "invert_grid_power", selector: { boolean: {} } },
             { name: "ev_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "consumer_1_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "consumer_1_name", selector: { text: {} } },
+            { name: "consumer_2_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "consumer_2_name", selector: { text: {} } },
             { name: "forecast_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "production_history_entity", selector: { entity: { domain: ["sensor"] } } },
             { name: "solar_name", selector: { text: {} } },
             { name: "inverter_size", selector: { number: { min: 0.5, max: 50, step: 0.5, mode: "box" } } },
             { name: "power_unit", selector: { select: { options: ["W", "kW"], mode: "dropdown" } } },
@@ -933,6 +986,8 @@ class EmsOverviewCardEditor extends EmsRepeaterEditor {
             { name: "export_color", selector: { color_rgb: {} } },
             { name: "import_color", selector: { color_rgb: {} } },
             { name: "ev_color", selector: { color_rgb: {} } },
+            { name: "consumer_1_color", selector: { color_rgb: {} } },
+            { name: "consumer_2_color", selector: { color_rgb: {} } },
           ],
         },
         {
