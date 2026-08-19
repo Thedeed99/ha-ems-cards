@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.13.0";
+const CARD_VERSION = "2.14.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2086,6 +2086,10 @@ class EmsSurplusCard extends HTMLElement {
     if (!Number.isFinite(value)) return 0;
     return /kw/i.test(state?.attributes?.unit_of_measurement || "") ? value * 1000 : value;
   }
+  _surplus(entity) {
+    const value = this._power(entity);
+    return this._config.invert_surplus_entity ? Math.max(0, -value) : Math.max(0, value);
+  }
   _format(value) {
     return `${value.toLocaleString(this._hass?.locale?.language || "nl", { maximumFractionDigits: 0 })} W`;
   }
@@ -2141,7 +2145,7 @@ class EmsSurplusCard extends HTMLElement {
     if (!this._hass) return;
     if (!this._built) this._build();
     const cfg = this._config;
-    const surplus = Math.max(0, this._power(cfg.surplus_entity));
+    const surplus = this._surplus(cfg.surplus_entity);
     const max = Math.max(Number(cfg.display_max) || 5000, Number(cfg.threshold) || 0, surplus);
     this._card.style.setProperty("--ems-surplus-bg", toCssColor(cfg.background_color, "#1d3b33"));
     this._card.style.setProperty("--ems-surplus-tile", toCssColor(cfg.tile_color, "rgba(255,255,255,.07)"));
@@ -2203,6 +2207,7 @@ class EmsSurplusCardEditor extends HTMLElement {
       const schema = [
         { name: "title", selector: { text: {} } },
         { name: "surplus_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "invert_surplus_entity", selector: { boolean: {} } },
         { name: "threshold", selector: { number: { min: 0, max: 25000, step: 50, mode: "box" } } },
         { name: "display_max", selector: { number: { min: 500, max: 50000, step: 500, mode: "box" } } },
       ];
@@ -2215,7 +2220,7 @@ class EmsSurplusCardEditor extends HTMLElement {
         schema.push({ name: `suggestion_${index}_action_entity`, selector: { entity: { domain: ["switch", "light", "input_boolean", "fan"] } } });
       }
       schema.push({ name: "background_color", selector: { color_rgb: {} } }, { name: "accent_color", selector: { color_rgb: {} } }, { name: "text_color", selector: { color_rgb: {} } }, { name: "tile_color", selector: { color_rgb: {} } });
-      const labels = { title: "Titel", surplus_entity: "Teruglevering naar net (W)", threshold: "Algemene adviesdrempel (W)", display_max: "Schaal van de balk (W)", background_color: "Achtergrondkleur", accent_color: "Accentkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
+      const labels = { title: "Titel", surplus_entity: "Netvermogen (+ import / - export)", invert_surplus_entity: "Negatief vermogen als overschot gebruiken", threshold: "Algemene adviesdrempel (W)", display_max: "Schaal van de balk (W)", background_color: "Achtergrondkleur", accent_color: "Accentkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
       for (let index = 1; index <= 3; index += 1) { labels[`suggestion_${index}_name`] = `Advies ${index} naam`; labels[`suggestion_${index}_threshold`] = `Advies ${index} inschakelen vanaf (W)`; labels[`suggestion_${index}_off_threshold`] = `Advies ${index} uitschakelen onder (W)`; labels[`suggestion_${index}_icon`] = `Advies ${index} icoon`; labels[`suggestion_${index}_entity`] = `Advies ${index} meer-info (optioneel)`; labels[`suggestion_${index}_action_entity`] = `Advies ${index} activeren (optioneel)`; }
       this._form.schema = schema;
       this._form.computeLabel = (field) => labels[field.name] || field.name;
