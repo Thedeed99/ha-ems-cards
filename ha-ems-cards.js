@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.6.0";
+const CARD_VERSION = "2.6.1";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -1561,7 +1561,7 @@ class EmsConsumersCard extends EmsBaseCard {
       columns: 3,
       devices: [],
       background_color: "#1d3b33",
-      tile_color: "#1d3b33",
+      tile_color: "rgba(255,255,255,.07)",
       text_color: "#ffffff",
       off_color: "#ff453a",
       tile_radius: 16,
@@ -1583,9 +1583,11 @@ class EmsConsumersCard extends EmsBaseCard {
     const root = this.shadowRoot;
     root.innerHTML = `<style>
       :host { display: block; }
-      ha-card { background: transparent; border: none; box-shadow: none; padding: 0; }
+      ha-card { background: var(--ems-card-bg); color: var(--ems-text); border: none; box-shadow: none;
+        border-radius: var(--ha-card-border-radius, 18px); padding: 16px; box-sizing: border-box; }
       .grid { display: grid; grid-template-columns: repeat(var(--ems-columns, 3), minmax(0, 1fr)); gap: 8px; }
       .tile { background: var(--ems-bg); border-radius: var(--ems-radius); min-height: 80px; padding: 8px; box-sizing: border-box;
+        border: 1px solid rgba(255,255,255,.025);
         display: grid; grid-template-areas: "name" "value"; grid-template-rows: 18px 1fr; justify-items: center; align-items: center;
         cursor: pointer; transition: filter .15s ease; }
       .tile:hover { filter: brightness(1.08); }
@@ -1631,7 +1633,8 @@ class EmsConsumersCard extends EmsBaseCard {
     if (!this._hass) return;
     if (!this._built) this._build();
     this._applyColors(this._card);
-    this._card.style.setProperty("--ems-bg", toCssColor(this._config.tile_color || this._config.background_color, "#1d3b33"));
+    this._card.style.setProperty("--ems-card-bg", toCssColor(this._config.background_color, "#1d3b33"));
+    this._card.style.setProperty("--ems-bg", toCssColor(this._config.tile_color, "rgba(255,255,255,.07)"));
     this._card.style.setProperty("--ems-radius", `${Number(this._config.tile_radius) || 16}px`);
     this._card.style.setProperty("--ems-name-size", `${Number(this._config.name_font_size) || 11}px`);
     this._card.style.setProperty("--ems-value-size", `${Number(this._config.value_font_size) || 26}px`);
