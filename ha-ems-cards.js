@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.17.0";
+const CARD_VERSION = "2.18.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2099,6 +2099,19 @@ class EmsSurplusCard extends HTMLElement {
     event.detail = { entityId: entity };
     this.dispatchEvent(event);
   }
+  _isActiveEntity(entityId) {
+    const state = this._state(entityId);
+    if (!state) return false;
+    const activeStates = ["on", "home", "true", "active", "running", "heat", "cool", "auto", "dry", "fan_only"];
+    if (activeStates.includes(state.state)) return true;
+    if (entityId.startsWith("climate.")) {
+      const action = String(state.attributes?.hvac_action || "").toLowerCase();
+      const mode = String(state.attributes?.hvac_mode || "").toLowerCase();
+      return ["heating", "cooling", "drying", "fan", "idle"].includes(action)
+        && !["off", "unknown", "unavailable"].includes(mode);
+    }
+    return false;
+  }
   _suggestions() {
     return [1, 2, 3].map((index) => ({
       label: this._config[`suggestion_${index}_name`],
@@ -2161,7 +2174,7 @@ class EmsSurplusCard extends HTMLElement {
     this._suggestionsEl.innerHTML = "";
     for (const suggestion of this._suggestions()) {
       const statusEntity = suggestion.statusEntity || suggestion.actionEntity;
-      const isOn = statusEntity && ["on", "home", "true", "active", "running", "heat", "cool", "auto", "dry", "fan_only"].includes(this._state(statusEntity)?.state);
+      const isOn = this._isActiveEntity(statusEntity);
       const shouldStart = surplus >= suggestion.threshold;
       const shouldStop = isOn && Number.isFinite(suggestion.offThreshold) && surplus <= suggestion.offThreshold;
       if (!shouldStart && !isOn) continue;
