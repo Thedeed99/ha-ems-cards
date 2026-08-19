@@ -1,0 +1,6 @@
+{
+  "name": "HA EMS Cards",
+  "render_readme": true,
+  "filename": "ha-ems-cards.js",
+  "homeassistant": "2024.4.0"
+}
