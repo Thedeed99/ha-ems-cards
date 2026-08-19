@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.26.0";
+const CARD_VERSION = "2.27.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2347,27 +2347,37 @@ class EmsUpsCard extends HTMLElement {
       :host { display:block; }
       ha-card { background:var(--ems-ups-bg); color:var(--ems-ups-text); border:0; border-radius:var(--ha-card-border-radius,18px); padding:18px; overflow:hidden; }
       .header { display:flex; align-items:center; gap:12px; }
-      .battery-icon { width:46px; height:46px; border-radius:50%; flex:none;
+      .header-icon { width:34px; height:34px; border-radius:50%; flex:none;
         display:flex; align-items:center; justify-content:center;
-        border:1.5px solid rgba(255,255,255,.28); background:var(--ems-ups-tile);
-        transition:background .3s ease, border-color .3s ease; }
-      .battery-icon ha-icon { --mdc-icon-size:22px; color:var(--ems-ups-text); }
-      .battery-icon[data-state="charging"] { background:var(--ems-ups-accent); border-color:var(--ems-ups-accent); }
-      .battery-icon[data-state="charging"] ha-icon { color:var(--ems-ups-on-accent); }
-      .battery-icon[data-state="discharging"] { border-color:var(--ems-ups-accent); }
-      .battery-icon[data-state="discharging"] ha-icon { color:var(--ems-ups-accent); }
+        background:rgba(255,255,255,.12); }
+      .header-icon ha-icon { --mdc-icon-size:18px; color:rgba(255,255,255,.75); }
       .titles { flex:1; min-width:0; }
       h1 { margin:0; font-size:1.15rem; font-weight:600; line-height:1.2; }
       .status { font-size:.85rem; opacity:.7; margin-top:2px; }
-      .level { font-size:2.1rem; font-weight:700; margin-top:14px; }
+      .device { display:flex; justify-content:center; padding:14px 0 4px 0; }
+      .device svg { width:78px; height:auto; }
+      .device-fill { transition:height .35s ease, y .35s ease, fill .3s ease; }
+      .level { font-size:2.1rem; font-weight:700; margin-top:10px; text-align:center; }
       .stats { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-top:14px; }
       .stat { background:var(--ems-ups-tile); border-radius:12px; padding:9px 10px; cursor:pointer; text-align:center; }
       .stat .k { font-size:.68rem; opacity:.65; }
       .stat .v { font-size:1.1rem; font-weight:700; margin-top:2px; }
     </style><ha-card>
       <div class="header">
-        <div class="battery-icon"><ha-icon icon="mdi:battery"></ha-icon></div>
+        <div class="header-icon"><ha-icon icon="mdi:battery"></ha-icon></div>
         <div class="titles"><h1></h1><div class="status"></div></div>
+      </div>
+      <div class="device">
+        <svg viewBox="0 0 100 170" role="img" aria-hidden="true">
+          <rect x="36" y="4" width="28" height="12" rx="4" fill="#2a2a2c"/>
+          <rect x="6" y="14" width="88" height="152" rx="18" fill="#2a2a2c"/>
+          <rect x="12" y="20" width="76" height="140" rx="14" fill="#1a1a1c"/>
+          <clipPath id="ups-clip"><rect x="20" y="28" width="60" height="124" rx="10"/></clipPath>
+          <rect x="20" y="28" width="60" height="124" rx="10" fill="#111113"/>
+          <g clip-path="url(#ups-clip)">
+            <rect class="device-fill" x="20" y="152" width="60" height="0" fill="#5c5c60"/>
+          </g>
+        </svg>
       </div>
       <div class="level"></div>
       <div class="stats"></div>
@@ -2376,8 +2386,7 @@ class EmsUpsCard extends HTMLElement {
     this._title = this.shadowRoot.querySelector("h1");
     this._statusEl = this.shadowRoot.querySelector(".status");
     this._levelEl = this.shadowRoot.querySelector(".level");
-    this._batteryIcon = this.shadowRoot.querySelector(".battery-icon");
-    this._batteryIconEl = this.shadowRoot.querySelector(".battery-icon ha-icon");
+    this._deviceFill = this.shadowRoot.querySelector(".device-fill");
 
     const cfg = this._config;
     const statsEl = this.shadowRoot.querySelector(".stats");
@@ -2428,11 +2437,15 @@ class EmsUpsCard extends HTMLElement {
     const isDischarging = !isIdle && !isPassThrough && netPower < 0;
 
     this._levelEl.textContent = `${level.toLocaleString(this._language())}%`;
-    this._batteryIconEl.setAttribute(
-      "icon",
-      isCharging ? "mdi:battery-charging" : isDischarging ? "mdi:battery-arrow-down" : "mdi:battery"
-    );
-    this._batteryIcon.dataset.state = isCharging ? "charging" : isDischarging ? "discharging" : "idle";
+    const fillColor = isCharging
+      ? toCssColor(cfg.accent_color, "#e8c547")
+      : isDischarging
+        ? "#8a8a8e"
+        : "#5c5c60";
+    const fillHeight = Math.max(0, Math.min(124, (level / 100) * 124));
+    this._deviceFill.setAttribute("height", String(fillHeight));
+    this._deviceFill.setAttribute("y", String(152 - fillHeight));
+    this._deviceFill.setAttribute("fill", fillColor);
     this._statusEl.textContent = isIdle
       ? "Batterij niet actief (vol en in rust)"
       : isPassThrough
