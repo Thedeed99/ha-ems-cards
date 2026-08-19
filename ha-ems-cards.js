@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.0.1";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -562,16 +562,19 @@ class EmsRepeaterEditor extends HTMLElement {
     this._itemSchema = options.itemSchema;
     this._baseSchema = options.baseSchema;
     this._cardType = options.cardType;
+    this._itemForms = [];
+    this._itemCount = -1;
+    this._built = false;
   }
 
   setConfig(config) {
     this._config = { ...STYLE_DEFAULTS, ...config };
-    this._render();
+    this._update();
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    this._update();
   }
 
   _emit(config) {
@@ -583,7 +586,7 @@ class EmsRepeaterEditor extends HTMLElement {
         composed: true,
       })
     );
-    this._render();
+    this._update();
   }
 
   _items() {
@@ -594,9 +597,27 @@ class EmsRepeaterEditor extends HTMLElement {
     return LABELS[schema.name] || schema.name;
   }
 
+  /** Bouwt de DOM alleen opnieuw als het aantal rijen wijzigt, anders verliezen velden hun focus. */
+  _update() {
+    if (!this._hass) return;
+    const items = this._items();
+    if (!this._built || items.length !== this._itemCount) {
+      this._render();
+      return;
+    }
+    this._baseForm.hass = this._hass;
+    this._baseForm.data = this._config;
+    this._itemForms.forEach((entry, index) => {
+      entry.form.hass = this._hass;
+      entry.form.data = items[index];
+      entry.label.textContent = items[index].name || items[index].entity || `#${index + 1}`;
+    });
+  }
+
   _render() {
     if (!this._hass) return;
     this.innerHTML = "";
+    this._itemForms = [];
 
     const base = document.createElement("ha-form");
     base.hass = this._hass;
@@ -607,6 +628,7 @@ class EmsRepeaterEditor extends HTMLElement {
       ev.stopPropagation();
       this._emit({ type: this._cardType, ...this._config, ...ev.detail.value });
     });
+    this._baseForm = base;
     this.appendChild(base);
 
     const items = this._items();
@@ -625,15 +647,16 @@ class EmsRepeaterEditor extends HTMLElement {
       up.innerHTML = '<ha-icon icon="mdi:arrow-up"></ha-icon>';
       up.disabled = index === 0;
       up.addEventListener("click", () => {
-        const list = [...items];
+        const list = [...this._items()];
         [list[index - 1], list[index]] = [list[index], list[index - 1]];
         this._emit({ ...this._config, [this._listKey]: list });
+        this._render();
       });
 
       const remove = document.createElement("ha-icon-button");
       remove.innerHTML = '<ha-icon icon="mdi:delete"></ha-icon>';
       remove.addEventListener("click", () => {
-        const list = items.filter((_, position) => position !== index);
+        const list = this._items().filter((_, position) => position !== index);
         this._emit({ ...this._config, [this._listKey]: list });
       });
 
@@ -647,7 +670,7 @@ class EmsRepeaterEditor extends HTMLElement {
       form.computeLabel = (schema) => this._label(schema);
       form.addEventListener("value-changed", (ev) => {
         ev.stopPropagation();
-        const list = items.map((entry, position) =>
+        const list = this._items().map((entry, position) =>
           position === index ? { ...entry, ...ev.detail.value } : entry
         );
         this._emit({ ...this._config, [this._listKey]: list });
@@ -655,7 +678,11 @@ class EmsRepeaterEditor extends HTMLElement {
 
       wrapper.append(header, form);
       this.appendChild(wrapper);
+      this._itemForms.push({ form, label });
     });
+
+    this._itemCount = items.length;
+    this._built = true;
 
     const add = document.createElement("mwc-button");
     add.setAttribute("raised", "");
