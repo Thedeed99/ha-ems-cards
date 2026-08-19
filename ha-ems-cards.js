@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.14.0";
+const CARD_VERSION = "2.15.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2162,7 +2162,7 @@ class EmsSurplusCard extends HTMLElement {
       const isOn = suggestion.actionEntity && ["on", "home", "true"].includes(this._state(suggestion.actionEntity)?.state);
       const shouldStart = surplus >= suggestion.threshold;
       const shouldStop = isOn && Number.isFinite(suggestion.offThreshold) && surplus <= suggestion.offThreshold;
-      if (!shouldStart && !shouldStop) continue;
+      if (!shouldStart && !isOn) continue;
       const row = document.createElement("div");
       row.className = "suggestion";
       row.dataset.action = String(Boolean(suggestion.actionEntity || suggestion.entity));
