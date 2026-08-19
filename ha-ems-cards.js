@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.2.0";
+const CARD_VERSION = "2.3.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -722,9 +722,9 @@ class EmsOverviewCard extends EmsBaseCard {
     }
 
     if (this._flowEl) {
-      const max = Number(cfg.flow_max) || 2500;
       const raw = Number(this._state(cfg.flow_entity)?.state);
       const value = Number.isFinite(raw) ? raw : 0;
+      const max = this._scaleFor(Number(cfg.flow_max) || 2500, Math.abs(value), cfg.flow_auto_scale);
       const percentage = Math.max(0, Math.min(100, (Math.abs(value) / max) * 100));
       this._flowFill.style.width = `${percentage}%`;
       this._flowRange.textContent = `0 - ${this._formatNumber(max)} W`;
@@ -734,9 +734,14 @@ class EmsOverviewCard extends EmsBaseCard {
     }
 
     if (this._solarSegs) {
-      const scale = (Number(cfg.inverter_size) || SOLAR_DEFAULTS.inverter_size) * 1000;
       const flows = this._calculateFlows();
       this._flows = flows;
+      const total = Object.values(flows.segments).reduce((sum, watts) => sum + watts, 0);
+      const scale = this._scaleFor(
+        (Number(cfg.inverter_size) || SOLAR_DEFAULTS.inverter_size) * 1000,
+        Math.max(total, flows.production, flows.usage),
+        cfg.auto_scale
+      );
       const percentage = (watts) => Math.max(0, Math.min(100, (watts / scale) * 100));
 
       for (const def of this._segmentDefs) {
@@ -847,6 +852,13 @@ class EmsOverviewCard extends EmsBaseCard {
         }
       }
     }
+  }
+
+  /** Vergroot de schaal naar een rond getal zodra het vermogen erboven komt. */
+  _scaleFor(base, value, autoScale) {
+    if (autoScale === false || !Number.isFinite(value) || value <= base) return base;
+    const step = base >= 5000 ? 1000 : 500;
+    return Math.ceil((value * 1.05) / step) * step;
   }
 
   /** Verdeelt de zonneproductie over huis, verbruikers en laadpaal; de rest komt van het net. */
@@ -1264,6 +1276,8 @@ const LABELS = {
   disable_animation: "Animatie uitzetten",
   animation_speed: "Snelheid animatie (s)",
   thousands_separator: "Scheidingsteken duizendtallen",
+  auto_scale: "Schaal automatisch vergroten",
+  flow_auto_scale: "Schaal energiestroom automatisch vergroten",
 };
 
 /** Editor met een herhaalbare lijst van tegels/apparaten. */
@@ -1444,6 +1458,7 @@ class EmsOverviewCardEditor extends EmsRepeaterEditor {
             { name: "production_history_entity", selector: { entity: { domain: ["sensor"] } } },
             { name: "solar_name", selector: { text: {} } },
             { name: "inverter_size", selector: { number: { min: 0.5, max: 50, step: 0.5, mode: "box" } } },
+            { name: "auto_scale", selector: { boolean: {} } },
             { name: "power_unit", selector: { select: { options: ["W", "kW"], mode: "dropdown" } } },
             { name: "decimals", selector: { number: { min: 0, max: 3, step: 1, mode: "box" } } },
             { name: "show_solar_legend", selector: { boolean: {} } },
@@ -1465,6 +1480,7 @@ class EmsOverviewCardEditor extends EmsRepeaterEditor {
             { name: "flow_entity", selector: { entity: { domain: ["sensor"] } } },
             { name: "flow_name", selector: { text: {} } },
             { name: "flow_max", selector: { number: { min: 100, max: 25000, step: 100, mode: "box" } } },
+            { name: "flow_auto_scale", selector: { boolean: {} } },
             { name: "flow_left_icon", selector: { icon: {} } },
             { name: "flow_right_icon", selector: { icon: {} } },
           ],
