@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.9.0";
+const CARD_VERSION = "2.10.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -1790,12 +1790,17 @@ class EmsEnergyInsightsCard extends HTMLElement {
       .header ha-icon { --mdc-icon-size: 22px; color: var(--ems-accent); }
       h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
       .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-      .panel { background: var(--ems-tile); border-radius: 12px; padding: 10px; min-width: 0; }
+      .panel { background: var(--ems-tile); border-radius: 12px; padding: 10px; min-width: 0; cursor: pointer; }
+      .panel:hover { filter: brightness(1.08); }
       .head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
       .label { font-size: .76rem; opacity: .72; }
       .total { font-size: .9rem; font-weight: 700; white-space: nowrap; }
       .bars { height: 112px; display: flex; align-items: flex-end; gap: 3px; margin-top: 10px; }
-      .bar { flex: 1; min-width: 0; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--ems-accent); opacity: .86; }
+      .bar { flex: 1; min-width: 0; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--ems-accent); opacity: .86; position: relative; cursor: pointer; }
+      .bar:hover, .bar:focus-visible { opacity: 1; outline: 2px solid var(--ems-accent); outline-offset: 2px; }
+      .bar-value { position: absolute; left: 50%; bottom: calc(100% + 5px); transform: translateX(-50%); display: none; z-index: 2;
+        background: var(--ems-bg); color: var(--ems-text); border-radius: 5px; padding: 3px 5px; font-size: .62rem; line-height: 1; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+      .bar:hover .bar-value, .bar:focus-visible .bar-value { display: block; }
       .bar[data-empty="true"] { background: rgba(255,255,255,.14); }
       .axis { display: flex; justify-content: space-between; font-size: .6rem; opacity: .48; margin-top: 5px; }
       .empty { height: 112px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: .76rem; opacity: .55; }
@@ -1817,6 +1822,7 @@ class EmsEnergyInsightsCard extends HTMLElement {
         panel.innerHTML = `<div class="head"><span class="label"></span><b class="total"></b></div><div class="bars"></div><div class="axis"></div>`;
         panel.querySelector(".label").textContent = `${this._text(kind)} · ${this._text(range)}`;
         this._grid.appendChild(panel);
+        panel.addEventListener("click", () => this._fireMoreInfo(entity));
         this._panels[`${kind}_${range}`] = { bars: panel.querySelector(".bars"), total: panel.querySelector(".total"), axis: panel.querySelector(".axis") };
       }
     }
@@ -1840,9 +1846,14 @@ class EmsEnergyInsightsCard extends HTMLElement {
     for (const item of series) {
       const bar = document.createElement("div");
       bar.className = "bar";
+      bar.tabIndex = 0;
       bar.style.height = `${item.value ? Math.max(4, (item.value / max) * 100) : 2}%`;
       bar.dataset.empty = String(item.value <= 0);
       bar.title = `${item.label}: ${this._format(item.value)} kWh`;
+      const value = document.createElement("span");
+      value.className = "bar-value";
+      value.textContent = `${this._format(item.value)} kWh`;
+      bar.appendChild(value);
       panel.bars.appendChild(bar);
     }
     panel.total.textContent = `${this._format(total)} kWh`;
