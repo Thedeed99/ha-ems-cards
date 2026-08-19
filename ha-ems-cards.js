@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.1.0";
+const CARD_VERSION = "2.2.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -206,10 +206,24 @@ class EmsBaseCard extends HTMLElement {
   _formatNumber(value, decimals = 0) {
     if (!Number.isFinite(value)) return "—";
     const language = this._hass?.locale?.language || this._hass?.language || "nl";
-    return value.toLocaleString(language, {
+    let text = value.toLocaleString(language, {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     });
+    const separator = this._config?.thousands_separator;
+    if (separator && separator !== "auto") {
+      const current = new Intl.NumberFormat(language)
+        .formatToParts(1000)
+        .find((part) => part.type === "group")?.value;
+      const replacement = separator === "geen" ? "" : separator;
+      if (current) text = text.split(current).join(replacement);
+      else if (replacement) {
+        const [whole, fraction] = text.split(/[.,]/);
+        const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, replacement);
+        text = fraction ? `${grouped}${text.charAt(whole.length)}${fraction}` : grouped;
+      }
+    }
+    return text;
   }
 
   /** Leest een vermogenssensor uit en rekent kW om naar W. */
@@ -1179,6 +1193,10 @@ const APPEARANCE_SCHEMA = [
   { name: "off_color", selector: { color_rgb: {} } },
   { name: "tile_radius", selector: { number: { min: 0, max: 40, step: 1, mode: "slider" } } },
   { name: "columns", selector: { number: { min: 1, max: 6, step: 1, mode: "box" } } },
+  {
+    name: "thousands_separator",
+    selector: { select: { options: ["auto", ".", ",", " ", "geen"], mode: "dropdown" } },
+  },
 ];
 
 const LABELS = {
@@ -1245,6 +1263,7 @@ const LABELS = {
   car_charger_load: "Capaciteit laadpaal (kW)",
   disable_animation: "Animatie uitzetten",
   animation_speed: "Snelheid animatie (s)",
+  thousands_separator: "Scheidingsteken duizendtallen",
 };
 
 /** Editor met een herhaalbare lijst van tegels/apparaten. */
