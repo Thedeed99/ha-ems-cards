@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.19.0";
+const CARD_VERSION = "2.24.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2112,6 +2112,17 @@ class EmsSurplusCard extends HTMLElement {
     }
     return false;
   }
+  _climateMode(entityId, suggestionIndex) {
+    const state = this._state(entityId);
+    const supported = Array.isArray(state?.attributes?.hvac_modes)
+      ? state.attributes.hvac_modes.filter((mode) => mode !== "off")
+      : [];
+    const configured = this._config[`suggestion_${suggestionIndex}_hvac_mode`];
+    if (configured && supported.includes(configured)) return configured;
+    const current = state?.attributes?.hvac_mode;
+    if (current && supported.includes(current)) return current;
+    return supported[0] || "cool";
+  }
   _suggestions() {
     return [1, 2, 3].map((index) => ({
       label: this._config[`suggestion_${index}_name`],
@@ -2208,7 +2219,10 @@ class EmsSurplusCard extends HTMLElement {
             } else {
               this._hass.callService("climate", "set_hvac_mode", {
                 entity_id: suggestion.actionEntity,
-                hvac_mode: this._config[`suggestion_${this._suggestions().indexOf(suggestion) + 1}_hvac_mode`] || "auto",
+                hvac_mode: this._climateMode(
+                  suggestion.actionEntity,
+                  this._suggestions().indexOf(suggestion) + 1
+                ),
               });
             }
           } else if (["switch", "light", "input_boolean", "fan"].includes(domain)) {
