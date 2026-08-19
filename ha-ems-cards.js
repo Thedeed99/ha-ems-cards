@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.24.0";
+const CARD_VERSION = "2.25.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2278,6 +2278,217 @@ class EmsSurplusCardEditor extends HTMLElement {
 customElements.define("ems-surplus-card", EmsSurplusCard);
 customElements.define("ems-surplus-card-editor", EmsSurplusCardEditor);
 
+class EmsUpsCard extends HTMLElement {
+  static getConfigElement() { return document.createElement("ems-ups-card-editor"); }
+  static getStubConfig() {
+    return { type: "custom:ems-ups-card", title: "UPS", idle_level_threshold: 80, ...STYLE_DEFAULTS };
+  }
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._built = false;
+  }
+
+  setConfig(config) {
+    this._config = { ...STYLE_DEFAULTS, ...config };
+    this._built = false;
+    this.shadowRoot.innerHTML = "";
+    if (this._hass) this._render();
+  }
+
+  set hass(hass) { this._hass = hass; this._render(); }
+  getCardSize() { return 5; }
+
+  _state(entity) { return entity && this._hass ? this._hass.states[entity] : undefined; }
+  _number(entity) {
+    const value = Number(this._state(entity)?.state);
+    return Number.isFinite(value) ? value : 0;
+  }
+  _power(entity) {
+    const state = this._state(entity);
+    const value = Number(state?.state);
+    if (!Number.isFinite(value)) return 0;
+    return /kw/i.test(state?.attributes?.unit_of_measurement || "") ? value * 1000 : value;
+  }
+  _language() { return this._hass?.locale?.language || this._hass?.language || "nl"; }
+  _formatState(entity, decimals) {
+    const stateObj = this._state(entity);
+    if (!stateObj) return "—";
+    if (["unavailable", "unknown"].includes(stateObj.state)) return "—";
+    const numeric = Number(stateObj.state);
+    const unit = stateObj.attributes.unit_of_measurement;
+    if (!Number.isFinite(numeric)) return stateObj.state;
+    const text = numeric.toLocaleString(this._language(), {
+      minimumFractionDigits: decimals ?? 0,
+      maximumFractionDigits: decimals ?? 0,
+    });
+    return unit ? `${text} ${unit}` : text;
+  }
+  _formatPower(watts) {
+    return `${Math.round(watts).toLocaleString(this._language())} W`;
+  }
+  _formatMinutes(minutes) {
+    if (!Number.isFinite(minutes) || minutes <= 0) return "—";
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    return hours > 0 ? `${hours} u ${mins} min` : `${mins} min`;
+  }
+  _moreInfo(entity) {
+    if (!entity) return;
+    const event = new Event("hass-more-info", { bubbles: true, composed: true });
+    event.detail = { entityId: entity };
+    this.dispatchEvent(event);
+  }
+
+  _build() {
+    this.shadowRoot.innerHTML = `<style>
+      :host { display:block; }
+      ha-card { background:var(--ems-ups-bg); color:var(--ems-ups-text); border:0; border-radius:var(--ha-card-border-radius,18px); padding:18px; overflow:hidden; }
+      .header { display:flex; align-items:center; gap:12px; }
+      .battery-icon { position:relative; width:34px; height:56px; border:2.5px solid var(--ems-ups-text); border-radius:6px; flex:none; }
+      .battery-icon::before { content:""; position:absolute; left:50%; top:-7px; transform:translateX(-50%);
+        width:14px; height:5px; border-radius:2px 2px 0 0; background:var(--ems-ups-text); }
+      .battery-fill { position:absolute; left:2px; right:2px; bottom:2px; border-radius:3px;
+        background:var(--ems-ups-accent); height:0%; transition:height .35s ease, background .3s ease; }
+      .battery-icon[data-idle="true"] .battery-fill { background:rgba(255,255,255,.35); }
+      .titles { flex:1; min-width:0; }
+      h1 { margin:0; font-size:1.15rem; font-weight:600; line-height:1.2; }
+      .status { font-size:.85rem; opacity:.7; margin-top:2px; }
+      .level { font-size:2.1rem; font-weight:700; margin-top:14px; }
+      .stats { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-top:14px; }
+      .stat { background:var(--ems-ups-tile); border-radius:12px; padding:9px 10px; cursor:pointer; text-align:center; }
+      .stat .k { font-size:.68rem; opacity:.65; }
+      .stat .v { font-size:1.1rem; font-weight:700; margin-top:2px; }
+    </style><ha-card>
+      <div class="header">
+        <div class="battery-icon"><div class="battery-fill"></div></div>
+        <div class="titles"><h1></h1><div class="status"></div></div>
+      </div>
+      <div class="level"></div>
+      <div class="stats"></div>
+    </ha-card>`;
+    this._card = this.shadowRoot.querySelector("ha-card");
+    this._title = this.shadowRoot.querySelector("h1");
+    this._statusEl = this.shadowRoot.querySelector(".status");
+    this._levelEl = this.shadowRoot.querySelector(".level");
+    this._batteryIcon = this.shadowRoot.querySelector(".battery-icon");
+    this._batteryFill = this.shadowRoot.querySelector(".battery-fill");
+
+    const cfg = this._config;
+    const statsEl = this.shadowRoot.querySelector(".stats");
+    const statDefs = [
+      { key: "input_power_entity", label: "Input" },
+      { key: "output_power_entity", label: "Output" },
+      { key: "remaining_time_entity", label: "Resterende tijd" },
+      { key: "soh_entity", label: "State of health" },
+    ].filter((def) => cfg[def.key]);
+    this._statEls = [];
+    for (const def of statDefs) {
+      const stat = document.createElement("div");
+      stat.className = "stat";
+      const key = document.createElement("div");
+      key.className = "k";
+      key.textContent = cfg[`${def.key}_name`] || def.label;
+      const value = document.createElement("div");
+      value.className = "v";
+      stat.append(key, value);
+      stat.addEventListener("click", () => this._moreInfo(cfg[def.key]));
+      statsEl.appendChild(stat);
+      this._statEls.push({ def, value });
+    }
+    this._built = true;
+  }
+
+  _render() {
+    if (!this._hass) return;
+    if (!this._built) this._build();
+    const cfg = this._config;
+    this._card.style.setProperty("--ems-ups-bg", toCssColor(cfg.background_color, "#1d3b33"));
+    this._card.style.setProperty("--ems-ups-tile", toCssColor(cfg.tile_color, "rgba(255,255,255,.07)"));
+    this._card.style.setProperty("--ems-ups-accent", toCssColor(cfg.accent_color, "#e8c547"));
+    this._card.style.setProperty("--ems-ups-text", toCssColor(cfg.text_color, "#ffffff"));
+    this._title.textContent = cfg.title || "UPS";
+
+    const level = this._number(cfg.level_entity);
+    const inputPower = this._power(cfg.input_power_entity);
+    const outputPower = this._power(cfg.output_power_entity);
+    const idleThreshold = Number(cfg.idle_level_threshold) || 80;
+    const isIdle = inputPower === 0 && outputPower === 0 && level > idleThreshold;
+
+    this._levelEl.textContent = `${level.toLocaleString(this._language())}%`;
+    this._batteryFill.style.height = `${Math.max(0, Math.min(100, level))}%`;
+    this._batteryIcon.dataset.idle = String(isIdle);
+    this._statusEl.textContent = isIdle
+      ? "Batterij niet actief (vol en in rust)"
+      : inputPower > 0
+        ? `Laden — ${this._formatPower(inputPower)}`
+        : outputPower > 0
+          ? `Ontladen — ${this._formatPower(outputPower)}`
+          : "In rust";
+
+    for (const { def, value } of this._statEls) {
+      if (def.key === "remaining_time_entity") {
+        const stateObj = this._state(cfg.remaining_time_entity);
+        const unit = stateObj?.attributes?.unit_of_measurement || "";
+        const numeric = Number(stateObj?.state);
+        value.textContent = /h/i.test(unit)
+          ? this._formatState(cfg.remaining_time_entity, 1)
+          : this._formatMinutes(numeric);
+      } else if (def.key === "soh_entity") {
+        value.textContent = this._formatState(cfg.soh_entity, 0);
+      } else {
+        value.textContent = this._formatState(cfg[def.key], 0);
+      }
+    }
+  }
+}
+
+class EmsUpsCardEditor extends HTMLElement {
+  setConfig(config) { this._config = { ...STYLE_DEFAULTS, ...config }; this._render(); }
+  set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.schema = [
+        { name: "title", selector: { text: {} } },
+        { name: "level_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "input_power_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "output_power_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "remaining_time_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "soh_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "idle_level_threshold", selector: { number: { min: 0, max: 100, step: 1, mode: "box" } } },
+        { name: "background_color", selector: { color_rgb: {} } },
+        { name: "accent_color", selector: { color_rgb: {} } },
+        { name: "text_color", selector: { color_rgb: {} } },
+        { name: "tile_color", selector: { color_rgb: {} } },
+      ];
+      const labels = {
+        title: "Titel",
+        level_entity: "Batterijniveau (%)",
+        input_power_entity: "Input (laadvermogen)",
+        output_power_entity: "Output (ontlaadvermogen)",
+        remaining_time_entity: "Resterende tijd",
+        soh_entity: "State of health (%)",
+        idle_level_threshold: "Niet-actief vanaf niveau (%)",
+        background_color: "Achtergrondkleur",
+        accent_color: "Accentkleur (accu-icoon)",
+        text_color: "Tekstkleur",
+        tile_color: "Tegelkleur",
+      };
+      this._form.computeLabel = (field) => labels[field.name] || field.name;
+      this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { type: "custom:ems-ups-card", ...event.detail.value } }, bubbles: true, composed: true })));
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+  }
+}
+
+customElements.define("ems-ups-card", EmsUpsCard);
+customElements.define("ems-ups-card-editor", EmsUpsCardEditor);
+
 customElements.define("ems-phases-card", EmsPhasesCard);
 customElements.define("ems-phases-card-editor", EmsPhasesCardEditor);
 
@@ -2332,6 +2543,13 @@ window.customCards.push(
     type: "ems-surplus-card",
     name: "EMS Zonne-overschot",
     description: "Advies voor laden of extra verbruik bij echte teruglevering naar het net.",
+    preview: true,
+    documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
+  },
+  {
+    type: "ems-ups-card",
+    name: "EMS UPS",
+    description: "Accu-status van een UPS: input, output, niveau, resterende tijd en state of health.",
     preview: true,
     documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
   }
