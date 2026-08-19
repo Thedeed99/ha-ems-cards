@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "1.0.1";
+const CARD_VERSION = "1.1.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -20,9 +20,25 @@ const STYLE_DEFAULTS = {
   tile_radius: 16,
 };
 
+const SOLAR_DEFAULTS = {
+  solar_color: "#34c759",
+  export_color: "#0a84ff",
+  import_color: "#ff453a",
+  ev_color: "#ff9f0a",
+  inverter_size: 2.5,
+};
+
 const TRANSLATIONS = {
   en: {
     flow: "Energy flow",
+    solar: "Solar",
+    production: "Solar",
+    selfUse: "Self-consumption",
+    exported: "Export",
+    imported: "Import",
+    usage: "Usage",
+    ev: "EV",
+    forecast: "Forecast",
     unavailable: "Unavailable",
     unknown: "Unknown",
     empty: "Add entities in the card editor.",
@@ -31,6 +47,14 @@ const TRANSLATIONS = {
   },
   nl: {
     flow: "Energiestroom",
+    solar: "Zonne-energie",
+    production: "Zon",
+    selfUse: "Eigen verbruik",
+    exported: "Export",
+    imported: "Import",
+    usage: "Verbruik",
+    ev: "EV",
+    forecast: "Verwachting",
     unavailable: "Niet beschikbaar",
     unknown: "Onbekend",
     empty: "Voeg entiteiten toe in de kaart-editor.",
@@ -121,7 +145,7 @@ class EmsBaseCard extends HTMLElement {
 
   setConfig(config) {
     if (!config) throw new Error("Invalid configuration");
-    this._config = { ...STYLE_DEFAULTS, ...config };
+    this._config = { ...STYLE_DEFAULTS, ...SOLAR_DEFAULTS, ...config };
     this._built = false;
     this.shadowRoot.innerHTML = "";
     if (this._hass) this._render();
@@ -156,7 +180,7 @@ class EmsBaseCard extends HTMLElement {
     const numeric = Number(stateObj.state);
     const unit = stateObj.attributes.unit_of_measurement;
     if (Number.isFinite(numeric)) {
-      return `${numeric.toFixed(decimals)}${unit ? ` ${unit}` : ""}`;
+      return `${this._formatNumber(numeric, decimals)}${unit ? ` ${unit}` : ""}`;
     }
     if (this._hass.formatEntityState) {
       try {
@@ -166,6 +190,32 @@ class EmsBaseCard extends HTMLElement {
       }
     }
     return stateObj.state;
+  }
+
+  /** Getal met scheidingsteken voor duizendtallen volgens de taal van Home Assistant. */
+  _formatNumber(value, decimals = 0) {
+    if (!Number.isFinite(value)) return "—";
+    const language = this._hass?.locale?.language || this._hass?.language || "nl";
+    return value.toLocaleString(language, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+
+  /** Leest een vermogenssensor uit en rekent kW om naar W. */
+  _power(entityId) {
+    const stateObj = this._state(entityId);
+    const numeric = Number(stateObj?.state);
+    if (!Number.isFinite(numeric)) return 0;
+    return /kw/i.test(stateObj.attributes.unit_of_measurement || "") ? numeric * 1000 : numeric;
+  }
+
+  /** Toont W of kW, afhankelijk van de ingestelde eenheid. */
+  _formatPower(watts) {
+    if (this._config.power_unit === "kW") {
+      return `${this._formatNumber(watts / 1000, Number(this._config.decimals) ?? 2)} kW`;
+    }
+    return `${this._formatNumber(watts, Number(this._config.decimals) || 0)} W`;
   }
 
   _friendlyName(entityId) {
@@ -199,6 +249,10 @@ class EmsBaseCard extends HTMLElement {
     card.style.setProperty("--ems-tile", tileColor(cfg));
     card.style.setProperty("--ems-radius", `${Number(cfg.tile_radius) || STYLE_DEFAULTS.tile_radius}px`);
     card.style.setProperty("--ems-on-accent", contrastColor(cfg.accent_color || STYLE_DEFAULTS.accent_color));
+    card.style.setProperty("--ems-solar", toCssColor(cfg.solar_color, SOLAR_DEFAULTS.solar_color));
+    card.style.setProperty("--ems-export", toCssColor(cfg.export_color, SOLAR_DEFAULTS.export_color));
+    card.style.setProperty("--ems-import", toCssColor(cfg.import_color, SOLAR_DEFAULTS.import_color));
+    card.style.setProperty("--ems-ev", toCssColor(cfg.ev_color, SOLAR_DEFAULTS.ev_color));
   }
 }
 
@@ -259,6 +313,30 @@ class EmsOverviewCard extends EmsBaseCard {
       }
       @keyframes ems-pulse { 0%, 100% { opacity: .15; } 50% { opacity: .9; } }
       .flow[data-flowing="false"] .flow-dots span { animation: none; opacity: .15; }
+      .solar { margin-top: 16px; }
+      .solar-head { display: flex; justify-content: space-between; align-items: baseline; }
+      .solar-title { font-size: .95rem; font-weight: 600; }
+      .solar-scale { font-size: .72rem; opacity: .55; }
+      .solar-track {
+        position: relative; display: flex; height: 26px; border-radius: 13px;
+        background: var(--ems-tile); overflow: hidden; margin-top: 8px;
+      }
+      .solar-seg { height: 100%; width: 0%; transition: width .5s ease; }
+      .solar-forecast {
+        position: absolute; top: 0; bottom: 0; width: 2px; left: 0;
+        background: var(--ems-text); opacity: .55; transition: left .5s ease;
+      }
+      .solar-ev-track {
+        height: 6px; border-radius: 3px; background: var(--ems-tile);
+        overflow: hidden; margin-top: 6px;
+      }
+      .solar-ev-fill { height: 100%; width: 0%; background: var(--ems-ev); transition: width .5s ease; }
+      .solar-legend {
+        display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: .72rem;
+      }
+      .solar-legend div { display: flex; align-items: center; gap: 5px; opacity: .85; }
+      .solar-legend i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+      .solar-legend b { font-weight: 600; }
     `;
     root.appendChild(style);
 
@@ -280,6 +358,78 @@ class EmsOverviewCard extends EmsBaseCard {
       weather.append(this._weatherIcon, this._weatherText);
       weather.addEventListener("click", () => this._fireMoreInfo(cfg.weather_entity));
       card.appendChild(weather);
+    }
+
+    if (cfg.production_entity) {
+      const solar = document.createElement("div");
+      solar.className = "solar";
+
+      const head = document.createElement("div");
+      head.className = "solar-head";
+      const solarTitle = document.createElement("span");
+      solarTitle.className = "solar-title";
+      solarTitle.textContent = cfg.solar_name || this._t("solar");
+      this._solarScale = document.createElement("span");
+      this._solarScale.className = "solar-scale";
+      head.append(solarTitle, this._solarScale);
+
+      const track = document.createElement("div");
+      track.className = "solar-track";
+      this._solarSegs = {};
+      for (const key of ["self", "export", "import"]) {
+        const seg = document.createElement("div");
+        seg.className = "solar-seg";
+        track.appendChild(seg);
+        this._solarSegs[key] = seg;
+      }
+      this._solarSegs.self.style.background = "var(--ems-solar)";
+      this._solarSegs.export.style.background = "var(--ems-export)";
+      this._solarSegs.import.style.background = "var(--ems-import)";
+
+      if (cfg.forecast_entity) {
+        this._solarForecast = document.createElement("div");
+        this._solarForecast.className = "solar-forecast";
+        track.appendChild(this._solarForecast);
+      }
+
+      solar.append(head, track);
+
+      if (cfg.ev_entity) {
+        const evTrack = document.createElement("div");
+        evTrack.className = "solar-ev-track";
+        this._solarEvFill = document.createElement("div");
+        this._solarEvFill.className = "solar-ev-fill";
+        evTrack.appendChild(this._solarEvFill);
+        solar.appendChild(evTrack);
+      }
+
+      if (cfg.show_solar_legend !== false) {
+        const legend = document.createElement("div");
+        legend.className = "solar-legend";
+        this._legendEls = {};
+        const legendDefs = [
+          { key: "production", color: "var(--ems-solar)", entity: cfg.production_entity },
+          { key: "usage", color: "var(--ems-text)", entity: cfg.self_consumption_entity },
+          { key: "imported", color: "var(--ems-import)", entity: cfg.grid_power_entity },
+          { key: "exported", color: "var(--ems-export)", entity: cfg.grid_power_entity },
+          { key: "ev", color: "var(--ems-ev)", entity: cfg.ev_entity },
+        ].filter((def) => def.entity);
+        for (const def of legendDefs) {
+          const item = document.createElement("div");
+          const dot = document.createElement("i");
+          dot.style.background = def.color;
+          const label = document.createElement("span");
+          label.textContent = this._t(def.key);
+          const value = document.createElement("b");
+          item.append(dot, label, value);
+          item.addEventListener("click", () => this._fireMoreInfo(def.entity));
+          legend.appendChild(item);
+          this._legendEls[def.key] = value;
+        }
+        solar.appendChild(legend);
+      }
+
+      card.appendChild(solar);
     }
 
     this._tileEls = [];
@@ -359,7 +509,7 @@ class EmsOverviewCard extends EmsBaseCard {
       card.appendChild(flow);
     }
 
-    if (!tiles.length && !cfg.flow_entity) {
+    if (!tiles.length && !cfg.flow_entity && !cfg.production_entity) {
       const empty = document.createElement("div");
       empty.className = "empty";
       empty.textContent = this._t("empty");
@@ -401,10 +551,49 @@ class EmsOverviewCard extends EmsBaseCard {
       const value = Number.isFinite(raw) ? raw : 0;
       const percentage = Math.max(0, Math.min(100, (Math.abs(value) / max) * 100));
       this._flowFill.style.width = `${percentage}%`;
-      this._flowRange.textContent = `0 - ${max} W`;
+      this._flowRange.textContent = `0 - ${this._formatNumber(max)} W`;
       this._flowEl.dataset.flowing = String(Math.abs(value) > (Number(cfg.flow_threshold) || 0));
       this._flowLeft.dataset.active = String(value > 0);
       this._flowRight.dataset.active = String(value < 0);
+    }
+
+    if (this._solarSegs) {
+      const scale = (Number(cfg.inverter_size) || SOLAR_DEFAULTS.inverter_size) * 1000;
+      const production = this._power(cfg.production_entity);
+      let grid = this._power(cfg.grid_power_entity);
+      if (cfg.invert_grid_power) grid = -grid;
+      const exported = Math.max(grid, 0);
+      const imported = Math.max(-grid, 0);
+      const usage = cfg.self_consumption_entity
+        ? this._power(cfg.self_consumption_entity)
+        : Math.max(production - exported + imported, 0);
+      const selfUse = Math.max(production - exported, 0);
+      const evPower = this._power(cfg.ev_entity);
+
+      const percentage = (watts) => Math.max(0, Math.min(100, (watts / scale) * 100));
+      this._solarSegs.self.style.width = `${percentage(selfUse)}%`;
+      this._solarSegs.export.style.width = `${percentage(exported)}%`;
+      this._solarSegs.import.style.width = `${percentage(imported)}%`;
+      this._solarScale.textContent = `0 - ${this._formatPower(scale)}`;
+
+      if (this._solarForecast) {
+        this._solarForecast.style.left = `${percentage(this._power(cfg.forecast_entity))}%`;
+      }
+      if (this._solarEvFill) {
+        this._solarEvFill.style.width = `${percentage(evPower)}%`;
+      }
+      if (this._legendEls) {
+        const values = {
+          production,
+          usage,
+          imported,
+          exported,
+          ev: evPower,
+        };
+        for (const [key, el] of Object.entries(this._legendEls)) {
+          el.textContent = this._formatPower(values[key] ?? 0);
+        }
+      }
     }
   }
 }
@@ -551,6 +740,20 @@ const LABELS = {
   name: "Naam",
   secondary_entity: "Extra waarde (optioneel)",
   decimals: "Decimalen",
+  production_entity: "Zonneproductie (sensor)",
+  self_consumption_entity: "Huidig verbruik (sensor)",
+  grid_power_entity: "Net import/export (sensor)",
+  invert_grid_power: "Netsensor omdraaien",
+  ev_entity: "Laadpaal (sensor)",
+  forecast_entity: "Verwachte productie nu (sensor)",
+  solar_name: "Naam zonnebalk",
+  inverter_size: "Omvormervermogen (kW)",
+  power_unit: "Eenheid (W of kW)",
+  show_solar_legend: "Toon legenda met waarden",
+  solar_color: "Kleur zon",
+  export_color: "Kleur export",
+  import_color: "Kleur import",
+  ev_color: "Kleur laadpaal",
 };
 
 /** Editor met een herhaalbare lijst van tegels/apparaten. */
@@ -568,7 +771,7 @@ class EmsRepeaterEditor extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { ...STYLE_DEFAULTS, ...config };
+    this._config = { ...STYLE_DEFAULTS, ...SOLAR_DEFAULTS, ...config };
     this._update();
   }
 
@@ -710,6 +913,28 @@ class EmsOverviewCardEditor extends EmsRepeaterEditor {
       baseSchema: [
         { name: "title", selector: { text: {} } },
         { name: "weather_entity", selector: { entity: { domain: ["weather"] } } },
+        {
+          name: "",
+          type: "expandable",
+          title: "Zonne-energie",
+          schema: [
+            { name: "production_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "self_consumption_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "grid_power_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "invert_grid_power", selector: { boolean: {} } },
+            { name: "ev_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "forecast_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "solar_name", selector: { text: {} } },
+            { name: "inverter_size", selector: { number: { min: 0.5, max: 50, step: 0.5, mode: "box" } } },
+            { name: "power_unit", selector: { select: { options: ["W", "kW"], mode: "dropdown" } } },
+            { name: "decimals", selector: { number: { min: 0, max: 3, step: 1, mode: "box" } } },
+            { name: "show_solar_legend", selector: { boolean: {} } },
+            { name: "solar_color", selector: { color_rgb: {} } },
+            { name: "export_color", selector: { color_rgb: {} } },
+            { name: "import_color", selector: { color_rgb: {} } },
+            { name: "ev_color", selector: { color_rgb: {} } },
+          ],
+        },
         {
           name: "",
           type: "expandable",
