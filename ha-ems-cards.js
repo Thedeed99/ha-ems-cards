@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.25.0";
+const CARD_VERSION = "2.26.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2281,7 +2281,7 @@ customElements.define("ems-surplus-card-editor", EmsSurplusCardEditor);
 class EmsUpsCard extends HTMLElement {
   static getConfigElement() { return document.createElement("ems-ups-card-editor"); }
   static getStubConfig() {
-    return { type: "custom:ems-ups-card", title: "UPS", idle_level_threshold: 80, ...STYLE_DEFAULTS };
+    return { type: "custom:ems-ups-card", title: "UPS", idle_level_threshold: 80, pass_through_threshold: 5, ...STYLE_DEFAULTS };
   }
 
   constructor() {
@@ -2347,12 +2347,15 @@ class EmsUpsCard extends HTMLElement {
       :host { display:block; }
       ha-card { background:var(--ems-ups-bg); color:var(--ems-ups-text); border:0; border-radius:var(--ha-card-border-radius,18px); padding:18px; overflow:hidden; }
       .header { display:flex; align-items:center; gap:12px; }
-      .battery-icon { position:relative; width:34px; height:56px; border:2.5px solid var(--ems-ups-text); border-radius:6px; flex:none; }
-      .battery-icon::before { content:""; position:absolute; left:50%; top:-7px; transform:translateX(-50%);
-        width:14px; height:5px; border-radius:2px 2px 0 0; background:var(--ems-ups-text); }
-      .battery-fill { position:absolute; left:2px; right:2px; bottom:2px; border-radius:3px;
-        background:var(--ems-ups-accent); height:0%; transition:height .35s ease, background .3s ease; }
-      .battery-icon[data-idle="true"] .battery-fill { background:rgba(255,255,255,.35); }
+      .battery-icon { width:46px; height:46px; border-radius:50%; flex:none;
+        display:flex; align-items:center; justify-content:center;
+        border:1.5px solid rgba(255,255,255,.28); background:var(--ems-ups-tile);
+        transition:background .3s ease, border-color .3s ease; }
+      .battery-icon ha-icon { --mdc-icon-size:22px; color:var(--ems-ups-text); }
+      .battery-icon[data-state="charging"] { background:var(--ems-ups-accent); border-color:var(--ems-ups-accent); }
+      .battery-icon[data-state="charging"] ha-icon { color:var(--ems-ups-on-accent); }
+      .battery-icon[data-state="discharging"] { border-color:var(--ems-ups-accent); }
+      .battery-icon[data-state="discharging"] ha-icon { color:var(--ems-ups-accent); }
       .titles { flex:1; min-width:0; }
       h1 { margin:0; font-size:1.15rem; font-weight:600; line-height:1.2; }
       .status { font-size:.85rem; opacity:.7; margin-top:2px; }
@@ -2363,7 +2366,7 @@ class EmsUpsCard extends HTMLElement {
       .stat .v { font-size:1.1rem; font-weight:700; margin-top:2px; }
     </style><ha-card>
       <div class="header">
-        <div class="battery-icon"><div class="battery-fill"></div></div>
+        <div class="battery-icon"><ha-icon icon="mdi:battery"></ha-icon></div>
         <div class="titles"><h1></h1><div class="status"></div></div>
       </div>
       <div class="level"></div>
@@ -2374,7 +2377,7 @@ class EmsUpsCard extends HTMLElement {
     this._statusEl = this.shadowRoot.querySelector(".status");
     this._levelEl = this.shadowRoot.querySelector(".level");
     this._batteryIcon = this.shadowRoot.querySelector(".battery-icon");
-    this._batteryFill = this.shadowRoot.querySelector(".battery-fill");
+    this._batteryIconEl = this.shadowRoot.querySelector(".battery-icon ha-icon");
 
     const cfg = this._config;
     const statsEl = this.shadowRoot.querySelector(".stats");
@@ -2409,24 +2412,34 @@ class EmsUpsCard extends HTMLElement {
     this._card.style.setProperty("--ems-ups-tile", toCssColor(cfg.tile_color, "rgba(255,255,255,.07)"));
     this._card.style.setProperty("--ems-ups-accent", toCssColor(cfg.accent_color, "#e8c547"));
     this._card.style.setProperty("--ems-ups-text", toCssColor(cfg.text_color, "#ffffff"));
+    this._card.style.setProperty("--ems-ups-on-accent", contrastColor(cfg.accent_color || "#e8c547"));
     this._title.textContent = cfg.title || "UPS";
 
     const level = this._number(cfg.level_entity);
     const inputPower = this._power(cfg.input_power_entity);
     const outputPower = this._power(cfg.output_power_entity);
     const idleThreshold = Number(cfg.idle_level_threshold) || 80;
+    // Net power: gelijke input/output betekent doorvoer (bypass), geen echte laad- of ontlaadstroom
+    const netPower = inputPower - outputPower;
+    const passThreshold = Math.max(1, Number(cfg.pass_through_threshold) || 5);
+    const isPassThrough = Math.abs(netPower) < passThreshold;
     const isIdle = inputPower === 0 && outputPower === 0 && level > idleThreshold;
+    const isCharging = !isIdle && !isPassThrough && netPower > 0;
+    const isDischarging = !isIdle && !isPassThrough && netPower < 0;
 
     this._levelEl.textContent = `${level.toLocaleString(this._language())}%`;
-    this._batteryFill.style.height = `${Math.max(0, Math.min(100, level))}%`;
-    this._batteryIcon.dataset.idle = String(isIdle);
+    this._batteryIconEl.setAttribute(
+      "icon",
+      isCharging ? "mdi:battery-charging" : isDischarging ? "mdi:battery-arrow-down" : "mdi:battery"
+    );
+    this._batteryIcon.dataset.state = isCharging ? "charging" : isDischarging ? "discharging" : "idle";
     this._statusEl.textContent = isIdle
       ? "Batterij niet actief (vol en in rust)"
-      : inputPower > 0
-        ? `Laden — ${this._formatPower(inputPower)}`
-        : outputPower > 0
-          ? `Ontladen — ${this._formatPower(outputPower)}`
-          : "In rust";
+      : isPassThrough
+        ? `Standby — doorvoer ${this._formatPower(outputPower)}`
+        : isCharging
+          ? `Laden — ${this._formatPower(netPower)}`
+          : `Ontladen — ${this._formatPower(-netPower)}`;
 
     for (const { def, value } of this._statEls) {
       if (def.key === "remaining_time_entity") {
@@ -2459,6 +2472,7 @@ class EmsUpsCardEditor extends HTMLElement {
         { name: "remaining_time_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "soh_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "idle_level_threshold", selector: { number: { min: 0, max: 100, step: 1, mode: "box" } } },
+        { name: "pass_through_threshold", selector: { number: { min: 0, max: 200, step: 1, mode: "box" } } },
         { name: "background_color", selector: { color_rgb: {} } },
         { name: "accent_color", selector: { color_rgb: {} } },
         { name: "text_color", selector: { color_rgb: {} } },
@@ -2472,6 +2486,7 @@ class EmsUpsCardEditor extends HTMLElement {
         remaining_time_entity: "Resterende tijd",
         soh_entity: "State of health (%)",
         idle_level_threshold: "Niet-actief vanaf niveau (%)",
+        pass_through_threshold: "Marge voor doorvoer/standby (W)",
         background_color: "Achtergrondkleur",
         accent_color: "Accentkleur (accu-icoon)",
         text_color: "Tekstkleur",
