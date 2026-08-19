@@ -5,7 +5,7 @@ Dashboardkaarten voor energiebeheer in Home Assistant, in dezelfde huisstijl als
 entiteiten in de UI en kiest je eigen achtergrond-, accent- en tekstkleur.
 
 ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/Version-2.1.0-blue.svg)
 
 ## Kaarten
 
@@ -15,8 +15,12 @@ Vervangt de bovenste tegel van je dashboard:
 
 - Titel bovenaan (bijv. *Real-time verbruik*)
 - Weer met temperatuur
-- Vrij aantal tegels met een grote waarde (W/kWh) en optioneel een tweede regel
-- Balk **Energiestroom** met schaal (0 – max W), iconen links/rechts en animatie zodra er stroom loopt
+- **Zonnebalk** op schaal van je omvormer met gestapelde segmenten: zon naar huis, per verbruiker (vol = zon, doorzichtig = net), laadpaal, import en export, plus een gestreept vlak voor onbenutte laadcapaciteit en een stippellijn voor de verwachting
+- Huis-, laadpaal- en neticoon die van kleur veranderen, en een batterijbalk met laadpercentage
+- Zoef-animatie over de balk zodra er stroom loopt
+- Tegels met actuele waarden en dagtotalen, inclusief netto import/export van vandaag
+- Vrij aantal eigen tegels met een grote waarde en optioneel een tweede regel
+- Balk **Energiestroom** met schaal (0 – max W), iconen links/rechts en zoef-animatie
 
 ### EMS Apparaten (`custom:ems-devices-card`)
 
@@ -56,6 +60,16 @@ Alles kan via de UI-editor. Gedeelde weergave-opties voor beide kaarten:
 | `flow_entity` | Sensor voor de energiestroom (positief = import) |
 | `flow_max` | Schaal van de balk in W (standaard 2500) |
 | `flow_left_icon` / `flow_right_icon` | Iconen aan weerszijden van de balk |
+| `production_entity` | Zonneproductie |
+| `self_consumption_entity` | Huidig huisverbruik |
+| `grid_power_entity` + `invert_grid_power` | Net (positief = export), of `import_entity` / `export_entity` |
+| `inverter_size` | Schaal van de zonnebalk in kW |
+| `ev_entity`, `ev_name`, `car_charger_load`, `ev_history_entity` | Laadpaal |
+| `consumers` | Lijst met `entity`, `name`, `color`, `history_entity` |
+| `battery_soc_entity`, `battery_power_entity` (+ `invert_battery_power`) of `battery_charge_entity` / `battery_discharge_entity`, `battery_capacity` | Thuisaccu |
+| `production_history_entity`, `consumption_history_entity`, `import_history_entity`, `export_history_entity` | Dagtotalen in kWh |
+| `power_unit`, `decimals`, `show_bar_values`, `show_solar_legend`, `show_stats`, `show_stats_detail`, `show_net_indicator`, `show_grid_icon_always` | Weergave |
+| `disable_animation`, `animation_speed` | Zoef-animatie |
 
 ### EMS Apparaten
 

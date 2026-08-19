@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.0.0";
+const CARD_VERSION = "2.1.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -27,7 +27,9 @@ const SOLAR_DEFAULTS = {
   ev_color: "#ff9f0a",
   consumer_1_color: "#5e5ce6",
   consumer_2_color: "#64d2ff",
+  battery_color: "#af52de",
   inverter_size: 2.5,
+  battery_capacity: 10,
 };
 
 const TRANSLATIONS = {
@@ -41,6 +43,8 @@ const TRANSLATIONS = {
     usage: "Usage",
     ev: "EV",
     forecast: "Forecast",
+    battery: "Battery",
+    net: "Net",
     today: "Today",
     unavailable: "Unavailable",
     unknown: "Unknown",
@@ -58,6 +62,8 @@ const TRANSLATIONS = {
     usage: "Verbruik",
     ev: "EV",
     forecast: "Verwachting",
+    battery: "Batterij",
+    net: "Netto",
     today: "Vandaag",
     unavailable: "Niet beschikbaar",
     unknown: "Onbekend",
@@ -257,6 +263,7 @@ class EmsBaseCard extends HTMLElement {
     card.style.setProperty("--ems-export", toCssColor(cfg.export_color, SOLAR_DEFAULTS.export_color));
     card.style.setProperty("--ems-import", toCssColor(cfg.import_color, SOLAR_DEFAULTS.import_color));
     card.style.setProperty("--ems-ev", toCssColor(cfg.ev_color, SOLAR_DEFAULTS.ev_color));
+    card.style.setProperty("--ems-battery", toCssColor(cfg.battery_color, SOLAR_DEFAULTS.battery_color));
   }
 }
 
@@ -310,13 +317,18 @@ class EmsOverviewCard extends EmsBaseCard {
         position: absolute; inset: 0 auto 0 0; width: 0%;
         background: var(--ems-accent); opacity: .85; transition: width .5s ease;
       }
-      .flow-dots { display: flex; gap: 6px; margin-top: 6px; padding: 0 42px; }
-      .flow-dots span {
-        flex: 1; height: 4px; border-radius: 2px; background: var(--ems-accent);
-        opacity: .25; animation: ems-pulse 1.6s linear infinite;
+      .flow-dots { position: relative; height: 4px; margin-top: 6px; margin-left: 42px; margin-right: 42px;
+        border-radius: 2px; background: var(--ems-tile); overflow: hidden; }
+      .flow-dots::after {
+        content: ""; position: absolute; top: 0; bottom: 0; width: 40%;
+        background: linear-gradient(90deg, transparent, var(--ems-accent), transparent);
+        animation: ems-sweep 2s linear infinite;
       }
-      @keyframes ems-pulse { 0%, 100% { opacity: .15; } 50% { opacity: .9; } }
-      .flow[data-flowing="false"] .flow-dots span { animation: none; opacity: .15; }
+      @keyframes ems-sweep {
+        from { transform: translateX(-100%); }
+        to { transform: translateX(350%); }
+      }
+      .flow[data-flowing="false"] .flow-dots::after { animation: none; opacity: 0; }
       .solar { margin-top: 16px; }
       .solar-head { display: flex; justify-content: space-between; align-items: baseline; }
       .solar-title { font-size: .95rem; font-weight: 600; }
@@ -349,6 +361,43 @@ class EmsOverviewCard extends EmsBaseCard {
       .solar-legend div { display: flex; align-items: center; gap: 5px; opacity: .85; cursor: pointer; }
       .solar-legend i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
       .solar-legend b { font-weight: 600; }
+      .solar-track[data-flowing="true"]::after {
+        content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+        animation: ems-sweep var(--ems-sweep-speed, 2s) linear infinite; pointer-events: none;
+      }
+      .seg-potential {
+        background-image: repeating-linear-gradient(
+          45deg, rgba(255,255,255,.22) 0 4px, transparent 4px 8px
+        );
+      }
+      .battery {
+        position: relative; height: 30px; border-radius: 15px; flex: none;
+        background: var(--ems-tile); overflow: hidden; cursor: pointer;
+      }
+      .battery-fill {
+        position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
+        background: var(--ems-battery); transition: height .5s ease;
+      }
+      .battery-soc {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-size: .62rem; font-weight: 700;
+      }
+      .battery[data-flow="charge"]::after, .battery[data-flow="discharge"]::after {
+        content: ""; position: absolute; left: 0; right: 0; height: 40%;
+        background: linear-gradient(180deg, transparent, rgba(255,255,255,.4), transparent);
+        animation: ems-battery-sweep var(--ems-sweep-speed, 2s) linear infinite;
+      }
+      .battery[data-flow="discharge"]::after { animation-direction: reverse; }
+      @keyframes ems-battery-sweep {
+        from { transform: translateY(-100%); }
+        to { transform: translateY(250%); }
+      }
+      .stats { display: grid; gap: 8px; margin-top: 12px;
+        grid-template-columns: repeat(var(--ems-columns, 3), minmax(0, 1fr)); }
+      .stat-detail { font-size: .66rem; opacity: .6; margin-top: 1px;
+        display: flex; align-items: center; justify-content: center; gap: 4px; }
+      .stat-detail i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
     `;
     root.appendChild(style);
 
@@ -410,7 +459,7 @@ class EmsOverviewCard extends EmsBaseCard {
       this._solarSegs = {};
       for (const def of this._segmentDefs) {
         const seg = document.createElement("div");
-        seg.className = "solar-seg";
+        seg.className = def.className ? `solar-seg ${def.className}` : "solar-seg";
         seg.style.background = def.color;
         if (def.dim) seg.style.opacity = ".55";
         seg.title = def.label;
@@ -434,6 +483,22 @@ class EmsOverviewCard extends EmsBaseCard {
           this._fireMoreInfo(cfg.grid_power_entity || cfg.import_entity || cfg.export_entity)
         );
         row.appendChild(this._gridIcon);
+      }
+
+      if (cfg.battery_soc_entity && cfg.show_battery_indicator !== false) {
+        this._batteryEl = document.createElement("div");
+        this._batteryEl.className = "battery";
+        const capacity = Number(cfg.battery_capacity) || SOLAR_DEFAULTS.battery_capacity;
+        const inverter = Number(cfg.inverter_size) || SOLAR_DEFAULTS.inverter_size;
+        const share = Math.max(12, Math.min(45, (capacity / (capacity + inverter * 4)) * 100));
+        this._batteryEl.style.width = `${share}px`;
+        this._batteryFill = document.createElement("div");
+        this._batteryFill.className = "battery-fill";
+        this._batterySoc = document.createElement("div");
+        this._batterySoc.className = "battery-soc";
+        this._batteryEl.append(this._batteryFill, this._batterySoc);
+        this._batteryEl.addEventListener("click", () => this._fireMoreInfo(cfg.battery_soc_entity));
+        row.appendChild(this._batteryEl);
       }
 
       solar.append(head, row);
@@ -480,6 +545,53 @@ class EmsOverviewCard extends EmsBaseCard {
       }
 
       card.appendChild(solar);
+    }
+
+    this._autoStats = [];
+    if (cfg.production_entity && cfg.show_stats !== false) {
+      const statDefs = [
+        { key: "production", label: this._t("production"), entity: cfg.production_entity, history: cfg.production_history_entity },
+        { key: "usage", label: this._t("usage"), entity: cfg.self_consumption_entity, history: cfg.consumption_history_entity },
+        { key: "grid", label: this._t("imported"), entity: cfg.grid_power_entity || cfg.import_entity, history: null },
+        { key: "battery", label: this._t("battery"), entity: cfg.battery_soc_entity, history: null },
+        { key: "ev", label: cfg.ev_name || this._t("ev"), entity: cfg.ev_entity, history: cfg.ev_history_entity },
+        ...this._consumers().map((consumer, index) => ({
+          key: `consumer_${index}`,
+          label: consumer.name || this._friendlyName(consumer.entity),
+          entity: consumer.entity,
+          history: consumer.history_entity,
+        })),
+      ].filter((def) => def.entity);
+
+      if (statDefs.length) {
+        const stats = document.createElement("div");
+        stats.className = "stats";
+        stats.style.setProperty("--ems-columns", String(Number(cfg.columns) || 3));
+        for (const def of statDefs) {
+          const tile = document.createElement("div");
+          tile.className = "tile";
+          const name = document.createElement("div");
+          name.className = "tile-name";
+          const value = document.createElement("div");
+          value.className = "tile-value";
+          tile.append(name, value);
+          let detail = null;
+          let dot = null;
+          if (cfg.show_stats_detail !== false) {
+            detail = document.createElement("div");
+            detail.className = "stat-detail";
+            dot = document.createElement("i");
+            const text = document.createElement("span");
+            detail.append(dot, text);
+            tile.appendChild(detail);
+            detail = text;
+          }
+          tile.addEventListener("click", () => this._fireMoreInfo(def.entity));
+          stats.appendChild(tile);
+          this._autoStats.push({ def, name, value, detail, dot });
+        }
+        card.appendChild(stats);
+      }
     }
 
     this._tileEls = [];
@@ -610,6 +722,7 @@ class EmsOverviewCard extends EmsBaseCard {
     if (this._solarSegs) {
       const scale = (Number(cfg.inverter_size) || SOLAR_DEFAULTS.inverter_size) * 1000;
       const flows = this._calculateFlows();
+      this._flows = flows;
       const percentage = (watts) => Math.max(0, Math.min(100, (watts / scale) * 100));
 
       for (const def of this._segmentDefs) {
@@ -660,6 +773,65 @@ class EmsOverviewCard extends EmsBaseCard {
           el.textContent = this._formatPower(flows.legend[key] ?? 0);
         }
       }
+
+      const track = this._solarSegs.home_solar?.parentElement;
+      if (track) {
+        const active = flows.production > 0 || flows.imported > 0 || flows.exported > 0;
+        track.dataset.flowing = String(cfg.disable_animation !== true && active);
+        track.style.setProperty("--ems-sweep-speed", `${Number(cfg.animation_speed) || 2}s`);
+      }
+
+      if (this._batteryEl) {
+        const soc = Number(this._state(cfg.battery_soc_entity)?.state);
+        const level = Number.isFinite(soc) ? Math.max(0, Math.min(100, soc)) : 0;
+        this._batteryFill.style.height = `${level}%`;
+        this._batterySoc.textContent = `${this._formatNumber(level, Number(cfg.battery_soc_decimals) || 0)}%`;
+        this._batteryEl.dataset.flow =
+          cfg.show_battery_flow === false
+            ? "idle"
+            : flows.batteryCharge > 0
+              ? "charge"
+              : flows.batteryDischarge > 0
+                ? "discharge"
+                : "idle";
+      }
+    }
+
+    for (const stat of this._autoStats || []) {
+      const { def, name, value, detail, dot } = stat;
+      const flows = this._flows || this._calculateFlows();      if (def.key === "grid") {
+        const exporting = flows.exported > 0;
+        name.textContent = exporting ? this._t("exported") : this._t("imported");
+        value.textContent = this._formatPower(exporting ? flows.exported : flows.imported);
+      } else if (def.key === "battery") {
+        name.textContent = def.label;
+        value.textContent = this._formatPower(
+          flows.batteryCharge > 0 ? flows.batteryCharge : flows.batteryDischarge
+        );
+      } else {
+        name.textContent = def.label;
+        value.textContent = this._formatPower(flows.legend[def.key] ?? this._power(def.entity));
+      }
+
+      if (detail) {
+        if (def.key === "grid") {
+          const importToday = Number(this._state(cfg.import_history_entity)?.state) || 0;
+          const exportToday = Number(this._state(cfg.export_history_entity)?.state) || 0;
+          const net = exportToday - importToday;
+          detail.textContent =
+            cfg.import_history_entity || cfg.export_history_entity
+              ? `${net >= 0 ? "+" : ""}${this._formatNumber(net, 1)} kWh`
+              : "";
+          dot.style.background = net >= 0 ? "var(--ems-solar)" : "var(--ems-import)";
+          dot.style.display = detail.textContent && cfg.show_net_indicator !== false ? "" : "none";
+        } else if (def.key === "battery") {
+          detail.textContent = this._formatValue(cfg.battery_soc_entity, Number(cfg.battery_soc_decimals) || 0);
+          dot.style.display = "none";
+        } else {
+          detail.textContent = def.history ? this._formatValue(def.history, 1) : "";
+          dot.style.display = "none";
+        }
+      }
     }
   }
 
@@ -690,37 +862,78 @@ class EmsOverviewCard extends EmsBaseCard {
       power: this._power(consumer.entity),
     }));
 
+    let batteryCharge = 0;
+    let batteryDischarge = 0;
+    if (cfg.battery_power_entity) {
+      let batteryPower = this._power(cfg.battery_power_entity);
+      if (cfg.invert_battery_power) batteryPower = -batteryPower;
+      batteryCharge = Math.max(batteryPower, 0);
+      batteryDischarge = Math.max(-batteryPower, 0);
+    } else {
+      batteryCharge = this._power(cfg.battery_charge_entity);
+      batteryDischarge = this._power(cfg.battery_discharge_entity);
+    }
+
     const trackedTotal = ev + consumers.reduce((total, item) => total + item.power, 0);
     const homeRest = Math.max(usage - trackedTotal, 0);
 
-    let solarLeft = Math.max(production - exported, 0);
+    let solarLeft = Math.max(production - exported - batteryCharge, 0);
+    let batteryLeft = batteryDischarge;
     const take = (amount) => {
       const solarPart = Math.min(solarLeft, amount);
       solarLeft -= solarPart;
-      return { solar: solarPart, grid: Math.max(amount - solarPart, 0) };
+      const batteryPart = Math.min(batteryLeft, amount - solarPart);
+      batteryLeft -= batteryPart;
+      return {
+        solar: solarPart,
+        battery: batteryPart,
+        grid: Math.max(amount - solarPart - batteryPart, 0),
+      };
     };
 
     const homeSplit = take(homeRest);
     const consumerSplits = consumers.map((item) => take(item.power));
     const evSplit = take(ev);
+    const evPotential = Math.max((Number(cfg.car_charger_load) || 0) * 1000 - ev, 0);
 
-    const segments = { home_solar: homeSplit.solar, home_grid: homeSplit.grid, export: exported };
+    const segments = {
+      home_solar: homeSplit.solar,
+      home_battery: homeSplit.battery,
+      home_grid: homeSplit.grid,
+      battery_charge: batteryCharge,
+      ev_potential: cfg.car_charger_load ? evPotential : 0,
+      export: exported,
+    };
     const legend = {
       production,
       usage,
       imported,
       exported,
       ev,
+      battery: batteryCharge > 0 ? batteryCharge : batteryDischarge,
     };
     consumerSplits.forEach((split, index) => {
       segments[`consumer_${index}_solar`] = split.solar;
+      segments[`consumer_${index}_battery`] = split.battery;
       segments[`consumer_${index}_grid`] = split.grid;
       legend[`consumer_${index}`] = consumers[index].power;
     });
     segments.ev_solar = evSplit.solar;
+    segments.ev_battery = evSplit.battery;
     segments.ev_grid = evSplit.grid;
 
-    return { production, usage, imported, exported, ev, homeSolar: homeSplit.solar, segments, legend };
+    return {
+      production,
+      usage,
+      imported,
+      exported,
+      ev,
+      batteryCharge,
+      batteryDischarge,
+      homeSolar: homeSplit.solar,
+      segments,
+      legend,
+    };
   }
 
   /** Verbruikers uit de nieuwe lijst of uit de losse velden. */
@@ -750,6 +963,7 @@ class EmsOverviewCard extends EmsBaseCard {
 
   _buildSegmentDefs() {
     const cfg = this._config;
+    const batteryColor = toCssColor(cfg.battery_color, SOLAR_DEFAULTS.battery_color);
     const defs = [
       {
         key: "home_solar",
@@ -757,6 +971,13 @@ class EmsOverviewCard extends EmsBaseCard {
         raw_color: toCssColor(cfg.solar_color, SOLAR_DEFAULTS.solar_color),
         label: this._t("selfUse"),
         entity: cfg.self_consumption_entity || cfg.production_entity,
+      },
+      {
+        key: "home_battery",
+        color: batteryColor,
+        raw_color: batteryColor,
+        label: this._t("battery"),
+        entity: cfg.battery_soc_entity,
       },
     ];
 
@@ -766,6 +987,14 @@ class EmsOverviewCard extends EmsBaseCard {
         key: `consumer_${index}_solar`,
         color,
         raw_color: color,
+        label: consumer.name || this._friendlyName(consumer.entity),
+        entity: consumer.entity,
+      });
+      defs.push({
+        key: `consumer_${index}_battery`,
+        color,
+        raw_color: color,
+        dim: true,
         label: consumer.name || this._friendlyName(consumer.entity),
         entity: consumer.entity,
       });
@@ -782,8 +1011,27 @@ class EmsOverviewCard extends EmsBaseCard {
     if (cfg.ev_entity) {
       const color = toCssColor(cfg.ev_color, SOLAR_DEFAULTS.ev_color);
       defs.push({ key: "ev_solar", color: "var(--ems-ev)", raw_color: color, label: cfg.ev_name || this._t("ev"), entity: cfg.ev_entity });
+      defs.push({ key: "ev_battery", color: "var(--ems-ev)", raw_color: color, dim: true, label: cfg.ev_name || this._t("ev"), entity: cfg.ev_entity });
       defs.push({ key: "ev_grid", color: "var(--ems-ev)", raw_color: color, dim: true, label: cfg.ev_name || this._t("ev"), entity: cfg.ev_entity });
+      if (cfg.car_charger_load) {
+        defs.push({
+          key: "ev_potential",
+          color: "transparent",
+          raw_color: "#888888",
+          className: "seg-potential",
+          label: cfg.ev_name || this._t("ev"),
+          entity: cfg.ev_entity,
+        });
+      }
     }
+
+    defs.push({
+      key: "battery_charge",
+      color: batteryColor,
+      raw_color: batteryColor,
+      label: this._t("battery"),
+      entity: cfg.battery_soc_entity || cfg.battery_power_entity,
+    });
 
     defs.push({
       key: "home_grid",
@@ -978,6 +1226,25 @@ const LABELS = {
   ev_name: "Naam laadpaal",
   show_bar_values: "Toon waarden in de balk",
   show_grid_icon_always: "Net-icoon altijd tonen",
+  battery_soc_entity: "Batterijlading (%)",
+  battery_power_entity: "Batterijvermogen (+ = laden)",
+  invert_battery_power: "Batterijsensor omdraaien",
+  battery_charge_entity: "Laadvermogen batterij",
+  battery_discharge_entity: "Ontlaadvermogen batterij",
+  battery_capacity: "Batterijcapaciteit (kWh)",
+  show_battery_indicator: "Toon batterijbalk",
+  show_battery_flow: "Toon batterijanimatie",
+  battery_color: "Kleur batterij",
+  show_stats: "Toon tegels",
+  show_stats_detail: "Toon dagtotalen op tegels",
+  show_net_indicator: "Toon netto-stip",
+  consumption_history_entity: "Verbruik vandaag (kWh)",
+  import_history_entity: "Import vandaag (kWh)",
+  export_history_entity: "Export vandaag (kWh)",
+  ev_history_entity: "Laadpaal vandaag (kWh)",
+  car_charger_load: "Capaciteit laadpaal (kW)",
+  disable_animation: "Animatie uitzetten",
+  animation_speed: "Snelheid animatie (s)",
 };
 
 /** Editor met een herhaalbare lijst van tegels/apparaten. */
@@ -1181,6 +1448,39 @@ class EmsOverviewCardEditor extends EmsRepeaterEditor {
             { name: "flow_max", selector: { number: { min: 100, max: 25000, step: 100, mode: "box" } } },
             { name: "flow_left_icon", selector: { icon: {} } },
             { name: "flow_right_icon", selector: { icon: {} } },
+          ],
+        },
+        {
+          name: "",
+          type: "expandable",
+          title: "Batterij",
+          schema: [
+            { name: "battery_soc_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "battery_power_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "invert_battery_power", selector: { boolean: {} } },
+            { name: "battery_charge_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "battery_discharge_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "battery_capacity", selector: { number: { min: 1, max: 200, step: 1, mode: "box" } } },
+            { name: "show_battery_indicator", selector: { boolean: {} } },
+            { name: "show_battery_flow", selector: { boolean: {} } },
+            { name: "battery_color", selector: { color_rgb: {} } },
+          ],
+        },
+        {
+          name: "",
+          type: "expandable",
+          title: "Dagtotalen en tegels",
+          schema: [
+            { name: "show_stats", selector: { boolean: {} } },
+            { name: "show_stats_detail", selector: { boolean: {} } },
+            { name: "show_net_indicator", selector: { boolean: {} } },
+            { name: "consumption_history_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "import_history_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "export_history_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "ev_history_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "car_charger_load", selector: { number: { min: 0, max: 50, step: 0.5, mode: "box" } } },
+            { name: "disable_animation", selector: { boolean: {} } },
+            { name: "animation_speed", selector: { number: { min: 0.5, max: 10, step: 0.5, mode: "box" } } },
           ],
         },
         { name: "", type: "expandable", title: "Weergave", schema: APPEARANCE_SCHEMA },
