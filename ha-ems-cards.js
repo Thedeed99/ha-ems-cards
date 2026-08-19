@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.18.0";
+const CARD_VERSION = "2.19.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2178,6 +2178,7 @@ class EmsSurplusCard extends HTMLElement {
       const shouldStart = surplus >= suggestion.threshold;
       const shouldStop = isOn && Number.isFinite(suggestion.offThreshold) && surplus <= suggestion.offThreshold;
       if (!shouldStart && !isOn) continue;
+      const turnOff = isOn;
       const row = document.createElement("div");
       row.className = "suggestion";
       row.dataset.action = String(Boolean(suggestion.actionEntity || suggestion.entity));
@@ -2190,8 +2191,10 @@ class EmsSurplusCard extends HTMLElement {
       name.textContent = suggestion.label;
       const threshold = document.createElement("div");
       threshold.className = "suggestion-threshold";
-      threshold.textContent = shouldStop
+      threshold.textContent = turnOff
+        ? shouldStop
         ? "Te weinig overschot · tik om uit te schakelen"
+        : "Al actief · tik om uit te schakelen"
         : suggestion.actionEntity ? "Nu beschikbaar · tik om te activeren" : "Nu beschikbaar";
       threshold.classList.add("available");
       text.append(name, threshold);
@@ -2200,7 +2203,7 @@ class EmsSurplusCard extends HTMLElement {
         row.addEventListener("click", () => {
           const domain = suggestion.actionEntity.split(".")[0];
           if (domain === "climate") {
-            if (shouldStop) {
+            if (turnOff) {
               this._hass.callService("climate", "turn_off", { entity_id: suggestion.actionEntity });
             } else {
               this._hass.callService("climate", "set_hvac_mode", {
@@ -2209,7 +2212,7 @@ class EmsSurplusCard extends HTMLElement {
               });
             }
           } else if (["switch", "light", "input_boolean", "fan"].includes(domain)) {
-            this._hass.callService(domain, shouldStop ? "turn_off" : "turn_on", { entity_id: suggestion.actionEntity });
+            this._hass.callService(domain, turnOff ? "turn_off" : "turn_on", { entity_id: suggestion.actionEntity });
           } else {
             this._moreInfo(suggestion.actionEntity);
           }
