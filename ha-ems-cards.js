@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.8.0";
+const CARD_VERSION = "2.9.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -1908,6 +1908,142 @@ class EmsEnergyInsightsCardEditor extends HTMLElement {
   }
 }
 
+class EmsPhasesCard extends HTMLElement {
+  static getConfigElement() { return document.createElement("ems-phases-card-editor"); }
+  static getStubConfig() {
+    return { type: "custom:ems-phases-card", title: "Fasen", max_current: 25, ...STYLE_DEFAULTS };
+  }
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._built = false;
+  }
+
+  setConfig(config) {
+    this._config = { ...STYLE_DEFAULTS, ...config };
+    this._built = false;
+    this.shadowRoot.innerHTML = "";
+    if (this._hass) this._render();
+  }
+
+  set hass(hass) { this._hass = hass; this._render(); }
+  getCardSize() { return 8; }
+
+  _state(entity) { return entity && this._hass ? this._hass.states[entity] : undefined; }
+  _value(entity) {
+    const value = Number(this._state(entity)?.state);
+    return Number.isFinite(value) ? value : 0;
+  }
+  _format(value, unit) {
+    return `${value.toLocaleString(this._hass?.locale?.language || "nl", { maximumFractionDigits: 2 })} ${unit}`;
+  }
+
+  _groups() {
+    try {
+      const groups = typeof this._config.groups === "string" ? JSON.parse(this._config.groups) : this._config.groups;
+      return Array.isArray(groups) ? groups.filter((group) => group?.name || group?.description) : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  _build() {
+    this.shadowRoot.innerHTML = `<style>
+      :host { display:block; }
+      ha-card { background:var(--ems-phase-bg); color:var(--ems-phase-text); border:0; border-radius:var(--ha-card-border-radius,18px); padding:16px; overflow:hidden; }
+      .header { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+      .header ha-icon { --mdc-icon-size:22px; color:var(--ems-phase-accent); }
+      h1 { margin:0; font-size:1.15rem; font-weight:600; }
+      .phases { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+      .phase { background:var(--ems-phase-tile); border-radius:12px; padding:9px 8px; text-align:center; min-width:0; }
+      .phase-name { font-size:.7rem; opacity:.68; }
+      .power { font-size:1.35rem; font-weight:700; margin:3px 0 7px; white-space:nowrap; }
+      .metric { display:flex; justify-content:space-between; gap:4px; font-size:.68rem; opacity:.76; }
+      .track { height:4px; border-radius:3px; background:rgba(255,255,255,.12); margin-top:7px; overflow:hidden; }
+      .fill { height:100%; width:0; background:var(--ems-phase-accent); transition:width .3s ease; }
+      .fill.high { background:#ff453a; }
+      .groups { margin-top:12px; border-radius:12px; overflow:hidden; background:var(--ems-phase-tile); }
+      .groups-head, .group { display:grid; grid-template-columns:72px 1fr 56px; gap:8px; padding:6px 9px; font-size:.68rem; }
+      .groups-head { opacity:.55; border-bottom:1px solid rgba(255,255,255,.12); }
+      .group { border-bottom:1px solid rgba(255,255,255,.06); }
+      .group:last-child { border-bottom:0; }
+      .group-phase { text-align:right; color:var(--ems-phase-accent); font-weight:600; }
+      .empty { opacity:.6; text-align:center; padding:12px; font-size:.76rem; }
+      @media (max-width:560px) { .power { font-size:1.05rem; } .groups-head,.group { grid-template-columns:58px 1fr 42px; } }
+    </style><ha-card><div class="header"><ha-icon icon="mdi:transmission-tower"></ha-icon><h1></h1></div><div class="phases"></div><div class="groups"></div></ha-card>`;
+    this._card = this.shadowRoot.querySelector("ha-card");
+    this._title = this.shadowRoot.querySelector("h1");
+    this._phases = this.shadowRoot.querySelector(".phases");
+    this._groupsEl = this.shadowRoot.querySelector(".groups");
+    this._phaseEls = [];
+    for (let index = 1; index <= 3; index += 1) {
+      const phase = document.createElement("section");
+      phase.className = "phase";
+      phase.innerHTML = `<div class="phase-name">Fase ${index}</div><div class="power"></div><div class="metric"><span class="current"></span><span class="voltage"></span></div><div class="track"><div class="fill"></div></div>`;
+      this._phases.appendChild(phase);
+      this._phaseEls.push({ phase, power: phase.querySelector(".power"), current: phase.querySelector(".current"), voltage: phase.querySelector(".voltage"), fill: phase.querySelector(".fill") });
+    }
+    this._built = true;
+  }
+
+  _render() {
+    if (!this._hass) return;
+    if (!this._built) this._build();
+    const cfg = this._config;
+    this._card.style.setProperty("--ems-phase-bg", toCssColor(cfg.background_color, "#1d3b33"));
+    this._card.style.setProperty("--ems-phase-tile", toCssColor(cfg.tile_color, "rgba(255,255,255,.07)"));
+    this._card.style.setProperty("--ems-phase-text", toCssColor(cfg.text_color, "#ffffff"));
+    this._card.style.setProperty("--ems-phase-accent", toCssColor(cfg.accent_color, "#e8c547"));
+    this._title.textContent = cfg.title || "Fasen";
+    const max = Number(cfg.max_current) || 25;
+    this._phaseEls.forEach((elements, index) => {
+      const phase = index + 1;
+      const power = this._value(cfg[`phase_${phase}_power_entity`]);
+      const current = this._value(cfg[`phase_${phase}_current_entity`]);
+      const voltage = this._value(cfg[`phase_${phase}_voltage_entity`]);
+      elements.power.textContent = this._format(power, "W");
+      elements.current.textContent = this._format(current, "A");
+      elements.voltage.textContent = this._format(voltage, "V");
+      elements.fill.style.width = `${Math.min(100, current / max * 100)}%`;
+      elements.fill.classList.toggle("high", current >= max * .8);
+    });
+    const groups = this._groups();
+    this._groupsEl.innerHTML = groups.length
+      ? `<div class="groups-head"><span>Groep</span><span>Omschrijving</span><span>Fase</span></div>${groups.map((group) => `<div class="group"><span>${group.name || ""}</span><span>${group.description || ""}</span><span class="group-phase">Fase ${group.phase || "-"}</span></div>`).join("")}`
+      : `<div class="empty">Voeg groepen toe via de kaart-editor.</div>`;
+  }
+}
+
+class EmsPhasesCardEditor extends HTMLElement {
+  setConfig(config) { this._config = { ...STYLE_DEFAULTS, ...config }; this._render(); }
+  set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      const schema = [{ name: "title", selector: { text: {} } }, { name: "max_current", selector: { number: { min: 6, max: 63, step: 1, mode: "box" } } }];
+      for (let phase = 1; phase <= 3; phase += 1) {
+        schema.push({ name: `phase_${phase}_power_entity`, selector: { entity: { domain: ["sensor"] } } });
+        schema.push({ name: `phase_${phase}_current_entity`, selector: { entity: { domain: ["sensor"] } } });
+        schema.push({ name: `phase_${phase}_voltage_entity`, selector: { entity: { domain: ["sensor"] } } });
+      }
+      schema.push({ name: "groups", selector: { text: { multiline: true } } }, { name: "background_color", selector: { color_rgb: {} } }, { name: "tile_color", selector: { color_rgb: {} } }, { name: "accent_color", selector: { color_rgb: {} } }, { name: "text_color", selector: { color_rgb: {} } });
+      this._form.schema = schema;
+      const labels = { title: "Titel", max_current: "Maximale stroom per fase (A)", groups: "Groepen als JSON: [{name,description,phase}]", background_color: "Achtergrondkleur", tile_color: "Tegelkleur", accent_color: "Accentkleur", text_color: "Tekstkleur" };
+      for (let phase = 1; phase <= 3; phase += 1) { labels[`phase_${phase}_power_entity`] = `Fase ${phase} vermogen`; labels[`phase_${phase}_current_entity`] = `Fase ${phase} stroom`; labels[`phase_${phase}_voltage_entity`] = `Fase ${phase} voltage`; }
+      this._form.computeLabel = (field) => labels[field.name] || field.name;
+      this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { type: "custom:ems-phases-card", ...event.detail.value } }, bubbles: true, composed: true })));
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+  }
+}
+
+customElements.define("ems-phases-card", EmsPhasesCard);
+customElements.define("ems-phases-card-editor", EmsPhasesCardEditor);
+
 customElements.define("ems-energy-insights-card", EmsEnergyInsightsCard);
 customElements.define("ems-energy-insights-card-editor", EmsEnergyInsightsCardEditor);
 
@@ -1945,6 +2081,13 @@ window.customCards.push(
     type: "ems-energy-insights-card",
     name: "EMS Energie-inzichten",
     description: "Totaal stroomverbruik en teruglevering per uur en per dag.",
+    preview: true,
+    documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
+  },
+  {
+    type: "ems-phases-card",
+    name: "EMS Fasen",
+    description: "Vermogen, stroom, voltage en groepenoverzicht per fase.",
     preview: true,
     documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
   }
