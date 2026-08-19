@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.27.0";
+const CARD_VERSION = "2.27.1";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2449,7 +2449,7 @@ class EmsUpsCard extends HTMLElement {
     this._statusEl.textContent = isIdle
       ? "Batterij niet actief (vol en in rust)"
       : isPassThrough
-        ? `Standby — doorvoer ${this._formatPower(outputPower)}`
+        ? "Standby"
         : isCharging
           ? `Laden — ${this._formatPower(netPower)}`
           : `Ontladen — ${this._formatPower(-netPower)}`;
