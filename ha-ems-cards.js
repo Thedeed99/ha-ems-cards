@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "2.0.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -321,25 +321,32 @@ class EmsOverviewCard extends EmsBaseCard {
       .solar-head { display: flex; justify-content: space-between; align-items: baseline; }
       .solar-title { font-size: .95rem; font-weight: 600; }
       .solar-scale { font-size: .72rem; opacity: .55; }
+      .solar-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+      .solar-icon {
+        width: 34px; height: 34px; border-radius: 50%; flex: none; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        background: var(--ems-tile); color: var(--ems-text);
+        border: 2px solid transparent; transition: background .3s ease, border-color .3s ease;
+      }
+      .solar-icon ha-icon { --mdc-icon-size: 18px; }
       .solar-track {
-        position: relative; display: flex; height: 26px; border-radius: 13px;
-        background: var(--ems-tile); overflow: hidden; margin-top: 8px;
+        position: relative; display: flex; flex: 1; height: 30px; border-radius: 15px;
+        background: var(--ems-tile); overflow: hidden;
       }
-      .solar-seg { height: 100%; width: 0%; transition: width .5s ease; }
+      .solar-seg {
+        height: 100%; width: 0%; overflow: hidden; transition: width .5s ease;
+        display: flex; align-items: center; justify-content: center;
+        font-size: .66rem; font-weight: 600; white-space: nowrap;
+      }
       .solar-forecast {
-        position: absolute; top: 0; bottom: 0; width: 2px; left: 0;
-        background: var(--ems-text); opacity: .55; transition: left .5s ease;
+        position: absolute; top: 0; bottom: 0; width: 0; left: 0;
+        border-left: 2px dotted var(--ems-accent); transition: left .5s ease;
       }
-      .solar-ev-track {
-        height: 6px; border-radius: 3px; background: var(--ems-tile);
-        overflow: hidden; margin-top: 6px;
-      }
-      .solar-ev-fill { height: 100%; width: 0%; background: var(--ems-ev); transition: width .5s ease; }
       .solar-today { font-size: .72rem; opacity: .6; margin-top: 6px; cursor: pointer; }
       .solar-legend {
         display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: .72rem;
       }
-      .solar-legend div { display: flex; align-items: center; gap: 5px; opacity: .85; }
+      .solar-legend div { display: flex; align-items: center; gap: 5px; opacity: .85; cursor: pointer; }
       .solar-legend i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
       .solar-legend b { font-weight: 600; }
     `;
@@ -378,55 +385,58 @@ class EmsOverviewCard extends EmsBaseCard {
       this._solarScale.className = "solar-scale";
       head.append(solarTitle, this._solarScale);
 
+      const row = document.createElement("div");
+      row.className = "solar-row";
+
+      this._houseIcon = document.createElement("div");
+      this._houseIcon.className = "solar-icon";
+      this._houseIcon.innerHTML = '<ha-icon icon="mdi:home"></ha-icon>';
+      this._houseIcon.addEventListener("click", () =>
+        this._fireMoreInfo(cfg.self_consumption_entity || cfg.production_entity)
+      );
+      row.appendChild(this._houseIcon);
+
+      if (cfg.ev_entity) {
+        this._evIcon = document.createElement("div");
+        this._evIcon.className = "solar-icon";
+        this._evIcon.innerHTML = '<ha-icon icon="mdi:car-electric"></ha-icon>';
+        this._evIcon.addEventListener("click", () => this._fireMoreInfo(cfg.ev_entity));
+        row.appendChild(this._evIcon);
+      }
+
       const track = document.createElement("div");
       track.className = "solar-track";
+      this._segmentDefs = this._buildSegmentDefs();
       this._solarSegs = {};
-      for (const key of ["self", "export", "import"]) {
+      for (const def of this._segmentDefs) {
         const seg = document.createElement("div");
         seg.className = "solar-seg";
+        seg.style.background = def.color;
+        if (def.dim) seg.style.opacity = ".55";
+        seg.title = def.label;
+        seg.addEventListener("click", () => this._fireMoreInfo(def.entity));
         track.appendChild(seg);
-        this._solarSegs[key] = seg;
+        this._solarSegs[def.key] = seg;
       }
-      this._solarSegs.self.style.background = "var(--ems-solar)";
-      this._solarSegs.export.style.background = "var(--ems-export)";
-      this._solarSegs.import.style.background = "var(--ems-import)";
 
       if (cfg.forecast_entity) {
         this._solarForecast = document.createElement("div");
         this._solarForecast.className = "solar-forecast";
         track.appendChild(this._solarForecast);
       }
+      row.appendChild(track);
 
-      solar.append(head, track);
-
-      this._subBars = [];
-      const subBarDefs = [
-        { key: "ev", entity: cfg.ev_entity, color: "var(--ems-ev)", label: this._t("ev") },
-        {
-          key: "consumer_1",
-          entity: cfg.consumer_1_entity,
-          color: toCssColor(cfg.consumer_1_color, SOLAR_DEFAULTS.consumer_1_color),
-          label: cfg.consumer_1_name || this._friendlyName(cfg.consumer_1_entity),
-        },
-        {
-          key: "consumer_2",
-          entity: cfg.consumer_2_entity,
-          color: toCssColor(cfg.consumer_2_color, SOLAR_DEFAULTS.consumer_2_color),
-          label: cfg.consumer_2_name || this._friendlyName(cfg.consumer_2_entity),
-        },
-      ].filter((def) => def.entity);
-
-      for (const def of subBarDefs) {
-        const subTrack = document.createElement("div");
-        subTrack.className = "solar-ev-track";
-        const fill = document.createElement("div");
-        fill.className = "solar-ev-fill";
-        fill.style.background = def.color;
-        subTrack.appendChild(fill);
-        subTrack.addEventListener("click", () => this._fireMoreInfo(def.entity));
-        solar.appendChild(subTrack);
-        this._subBars.push({ ...def, fill });
+      if (cfg.grid_power_entity || cfg.import_entity || cfg.export_entity) {
+        this._gridIcon = document.createElement("div");
+        this._gridIcon.className = "solar-icon";
+        this._gridIcon.innerHTML = '<ha-icon icon="mdi:transmission-tower"></ha-icon>';
+        this._gridIcon.addEventListener("click", () =>
+          this._fireMoreInfo(cfg.grid_power_entity || cfg.import_entity || cfg.export_entity)
+        );
+        row.appendChild(this._gridIcon);
       }
+
+      solar.append(head, row);
 
       if (cfg.production_history_entity) {
         this._todayEl = document.createElement("div");
@@ -444,9 +454,15 @@ class EmsOverviewCard extends EmsBaseCard {
         const legendDefs = [
           { key: "production", color: "var(--ems-solar)", entity: cfg.production_entity, label: this._t("production") },
           { key: "usage", color: "var(--ems-text)", entity: cfg.self_consumption_entity, label: this._t("usage") },
-          { key: "imported", color: "var(--ems-import)", entity: cfg.grid_power_entity, label: this._t("imported") },
-          { key: "exported", color: "var(--ems-export)", entity: cfg.grid_power_entity, label: this._t("exported") },
-          ...this._subBars.map((bar) => ({ key: bar.key, color: bar.color, entity: bar.entity, label: bar.label })),
+          { key: "imported", color: "var(--ems-import)", entity: cfg.grid_power_entity || cfg.import_entity, label: this._t("imported") },
+          { key: "exported", color: "var(--ems-export)", entity: cfg.grid_power_entity || cfg.export_entity, label: this._t("exported") },
+          { key: "ev", color: "var(--ems-ev)", entity: cfg.ev_entity, label: cfg.ev_name || this._t("ev") },
+          ...this._consumers().map((consumer, index) => ({
+            key: `consumer_${index}`,
+            color: consumerColor(consumer, index),
+            entity: consumer.entity,
+            label: consumer.name || this._friendlyName(consumer.entity),
+          })),
         ].filter((def) => def.entity);
         for (const def of legendDefs) {
           const item = document.createElement("div");
@@ -593,50 +609,205 @@ class EmsOverviewCard extends EmsBaseCard {
 
     if (this._solarSegs) {
       const scale = (Number(cfg.inverter_size) || SOLAR_DEFAULTS.inverter_size) * 1000;
-      const production = this._power(cfg.production_entity);
-      let grid = this._power(cfg.grid_power_entity);
-      if (cfg.invert_grid_power) grid = -grid;
-      const exported = Math.max(grid, 0);
-      const imported = Math.max(-grid, 0);
-      const usage = cfg.self_consumption_entity
-        ? this._power(cfg.self_consumption_entity)
-        : Math.max(production - exported + imported, 0);
-      const selfUse = Math.max(production - exported, 0);
-
+      const flows = this._calculateFlows();
       const percentage = (watts) => Math.max(0, Math.min(100, (watts / scale) * 100));
-      this._solarSegs.self.style.width = `${percentage(selfUse)}%`;
-      this._solarSegs.export.style.width = `${percentage(exported)}%`;
-      this._solarSegs.import.style.width = `${percentage(imported)}%`;
+
+      for (const def of this._segmentDefs) {
+        const seg = this._solarSegs[def.key];
+        const watts = flows.segments[def.key] || 0;
+        const width = percentage(watts);
+        seg.style.width = `${width}%`;
+        seg.textContent = cfg.show_bar_values !== false && width >= 14 ? this._formatPower(watts) : "";
+        seg.style.color = contrastColor(def.raw_color || "#000000");
+      }
+
       this._solarScale.textContent = `0 - ${this._formatPower(scale)}`;
 
       if (this._solarForecast) {
-        this._solarForecast.style.left = `${percentage(this._power(cfg.forecast_entity))}%`;
+        const forecast = this._power(cfg.forecast_entity);
+        this._solarForecast.style.left = `${percentage(forecast)}%`;
+        this._solarForecast.style.display = forecast > flows.production ? "" : "none";
       }
-      for (const bar of this._subBars) {
-        bar.fill.style.width = `${percentage(this._power(bar.entity))}%`;
+
+      if (this._houseIcon) {
+        this._houseIcon.style.borderColor = flows.homeSolar > 0 ? "var(--ems-solar)" : "transparent";
       }
+      if (this._evIcon) {
+        const charging = flows.ev > 0;
+        this._evIcon.style.background = charging ? "var(--ems-ev)" : "var(--ems-tile)";
+        this._evIcon.style.borderColor =
+          !charging && flows.exported > 0 ? "var(--ems-ev)" : "transparent";
+      }
+      if (this._gridIcon) {
+        const idle = flows.imported === 0 && flows.exported === 0;
+        this._gridIcon.style.background = flows.exported > 0
+          ? "var(--ems-export)"
+          : flows.imported > 0
+            ? "var(--ems-import)"
+            : "var(--ems-tile)";
+        this._gridIcon.style.display = idle && cfg.show_grid_icon_always === false ? "none" : "";
+      }
+
       if (this._todayEl) {
         this._todayEl.textContent = `${this._t("today")}: ${this._formatValue(
           cfg.production_history_entity,
           Number(cfg.energy_decimals) ?? 1
         )}`;
       }
+
       if (this._legendEls) {
-        const values = {
-          production,
-          usage,
-          imported,
-          exported,
-        };
-        for (const bar of this._subBars) {
-          values[bar.key] = this._power(bar.entity);
-        }
         for (const [key, el] of Object.entries(this._legendEls)) {
-          el.textContent = this._formatPower(values[key] ?? 0);
+          el.textContent = this._formatPower(flows.legend[key] ?? 0);
         }
       }
     }
   }
+
+  /** Verdeelt de zonneproductie over huis, verbruikers en laadpaal; de rest komt van het net. */
+  _calculateFlows() {
+    const cfg = this._config;
+    const production = this._power(cfg.production_entity);
+
+    let exported;
+    let imported;
+    if (cfg.grid_power_entity) {
+      let grid = this._power(cfg.grid_power_entity);
+      if (cfg.invert_grid_power) grid = -grid;
+      exported = Math.max(grid, 0);
+      imported = Math.max(-grid, 0);
+    } else {
+      exported = this._power(cfg.export_entity);
+      imported = this._power(cfg.import_entity);
+    }
+
+    const usage = cfg.self_consumption_entity
+      ? this._power(cfg.self_consumption_entity)
+      : Math.max(production - exported + imported, 0);
+
+    const ev = this._power(cfg.ev_entity);
+    const consumers = this._consumers().map((consumer) => ({
+      consumer,
+      power: this._power(consumer.entity),
+    }));
+
+    const trackedTotal = ev + consumers.reduce((total, item) => total + item.power, 0);
+    const homeRest = Math.max(usage - trackedTotal, 0);
+
+    let solarLeft = Math.max(production - exported, 0);
+    const take = (amount) => {
+      const solarPart = Math.min(solarLeft, amount);
+      solarLeft -= solarPart;
+      return { solar: solarPart, grid: Math.max(amount - solarPart, 0) };
+    };
+
+    const homeSplit = take(homeRest);
+    const consumerSplits = consumers.map((item) => take(item.power));
+    const evSplit = take(ev);
+
+    const segments = { home_solar: homeSplit.solar, home_grid: homeSplit.grid, export: exported };
+    const legend = {
+      production,
+      usage,
+      imported,
+      exported,
+      ev,
+    };
+    consumerSplits.forEach((split, index) => {
+      segments[`consumer_${index}_solar`] = split.solar;
+      segments[`consumer_${index}_grid`] = split.grid;
+      legend[`consumer_${index}`] = consumers[index].power;
+    });
+    segments.ev_solar = evSplit.solar;
+    segments.ev_grid = evSplit.grid;
+
+    return { production, usage, imported, exported, ev, homeSolar: homeSplit.solar, segments, legend };
+  }
+
+  /** Verbruikers uit de nieuwe lijst of uit de losse velden. */
+  _consumers() {
+    const cfg = this._config;
+    const list = Array.isArray(cfg.consumers) ? cfg.consumers.filter((item) => item && item.entity) : [];
+    if (list.length) return list;
+    const legacy = [];
+    if (cfg.consumer_1_entity) {
+      legacy.push({
+        entity: cfg.consumer_1_entity,
+        name: cfg.consumer_1_name,
+        color: cfg.consumer_1_color,
+        history_entity: cfg.consumer_1_history_entity,
+      });
+    }
+    if (cfg.consumer_2_entity) {
+      legacy.push({
+        entity: cfg.consumer_2_entity,
+        name: cfg.consumer_2_name,
+        color: cfg.consumer_2_color,
+        history_entity: cfg.consumer_2_history_entity,
+      });
+    }
+    return legacy;
+  }
+
+  _buildSegmentDefs() {
+    const cfg = this._config;
+    const defs = [
+      {
+        key: "home_solar",
+        color: "var(--ems-solar)",
+        raw_color: toCssColor(cfg.solar_color, SOLAR_DEFAULTS.solar_color),
+        label: this._t("selfUse"),
+        entity: cfg.self_consumption_entity || cfg.production_entity,
+      },
+    ];
+
+    this._consumers().forEach((consumer, index) => {
+      const color = consumerColor(consumer, index);
+      defs.push({
+        key: `consumer_${index}_solar`,
+        color,
+        raw_color: color,
+        label: consumer.name || this._friendlyName(consumer.entity),
+        entity: consumer.entity,
+      });
+      defs.push({
+        key: `consumer_${index}_grid`,
+        color,
+        raw_color: color,
+        dim: true,
+        label: consumer.name || this._friendlyName(consumer.entity),
+        entity: consumer.entity,
+      });
+    });
+
+    if (cfg.ev_entity) {
+      const color = toCssColor(cfg.ev_color, SOLAR_DEFAULTS.ev_color);
+      defs.push({ key: "ev_solar", color: "var(--ems-ev)", raw_color: color, label: cfg.ev_name || this._t("ev"), entity: cfg.ev_entity });
+      defs.push({ key: "ev_grid", color: "var(--ems-ev)", raw_color: color, dim: true, label: cfg.ev_name || this._t("ev"), entity: cfg.ev_entity });
+    }
+
+    defs.push({
+      key: "home_grid",
+      color: "var(--ems-import)",
+      raw_color: toCssColor(cfg.import_color, SOLAR_DEFAULTS.import_color),
+      label: this._t("imported"),
+      entity: cfg.grid_power_entity || cfg.import_entity,
+    });
+    defs.push({
+      key: "export",
+      color: "var(--ems-export)",
+      raw_color: toCssColor(cfg.export_color, SOLAR_DEFAULTS.export_color),
+      label: this._t("exported"),
+      entity: cfg.grid_power_entity || cfg.export_entity,
+    });
+
+    return defs;
+  }
+}
+
+const CONSUMER_PALETTE = ["#5e5ce6", "#64d2ff", "#bf5af2", "#ff375f", "#30d158", "#ffd60a"];
+
+function consumerColor(consumer, index) {
+  return toCssColor(consumer.color, CONSUMER_PALETTE[index % CONSUMER_PALETTE.length]);
 }
 
 function weatherIcon(state) {
@@ -802,6 +973,11 @@ const LABELS = {
   consumer_2_name: "Naam verbruiker 2",
   consumer_2_color: "Kleur verbruiker 2",
   production_history_entity: "Opbrengst vandaag (kWh)",
+  import_entity: "Import (aparte sensor)",
+  export_entity: "Export (aparte sensor)",
+  ev_name: "Naam laadpaal",
+  show_bar_values: "Toon waarden in de balk",
+  show_grid_icon_always: "Net-icoon altijd tonen",
 };
 
 /** Editor met een herhaalbare lijst van tegels/apparaten. */
@@ -970,7 +1146,10 @@ class EmsOverviewCardEditor extends EmsRepeaterEditor {
             { name: "self_consumption_entity", selector: { entity: { domain: ["sensor"] } } },
             { name: "grid_power_entity", selector: { entity: { domain: ["sensor"] } } },
             { name: "invert_grid_power", selector: { boolean: {} } },
+            { name: "import_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "export_entity", selector: { entity: { domain: ["sensor"] } } },
             { name: "ev_entity", selector: { entity: { domain: ["sensor"] } } },
+            { name: "ev_name", selector: { text: {} } },
             { name: "consumer_1_entity", selector: { entity: { domain: ["sensor"] } } },
             { name: "consumer_1_name", selector: { text: {} } },
             { name: "consumer_2_entity", selector: { entity: { domain: ["sensor"] } } },
@@ -982,6 +1161,8 @@ class EmsOverviewCardEditor extends EmsRepeaterEditor {
             { name: "power_unit", selector: { select: { options: ["W", "kW"], mode: "dropdown" } } },
             { name: "decimals", selector: { number: { min: 0, max: 3, step: 1, mode: "box" } } },
             { name: "show_solar_legend", selector: { boolean: {} } },
+            { name: "show_bar_values", selector: { boolean: {} } },
+            { name: "show_grid_icon_always", selector: { boolean: {} } },
             { name: "solar_color", selector: { color_rgb: {} } },
             { name: "export_color", selector: { color_rgb: {} } },
             { name: "import_color", selector: { color_rgb: {} } },
