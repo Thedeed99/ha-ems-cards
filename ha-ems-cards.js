@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.6.1";
+const CARD_VERSION = "2.7.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -1724,7 +1724,12 @@ class EmsEnergyInsightsCard extends HTMLElement {
   }
 
   async _fetchData() {
-    const ids = [this._config.consumption_entity, this._config.export_entity].filter(Boolean);
+    const consumptionIds = [
+      this._config.consumption_high_entity,
+      this._config.consumption_low_entity,
+      this._config.consumption_entity,
+    ].filter(Boolean);
+    const ids = [...new Set([...consumptionIds, this._config.export_entity].filter(Boolean))];
     if (!this._hass || !ids.length || Date.now() - this._lastFetch < 300000) return;
     this._lastFetch = Date.now();
     const now = new Date();
@@ -1739,6 +1744,8 @@ class EmsEnergyInsightsCard extends HTMLElement {
       ]);
       this._data.today = this._mapSeries(todayResult, ids, "hour");
       this._data.week = this._mapSeries(weekResult, ids, "day");
+      this._data.today.consumption = this._combineSeries(this._data.today, consumptionIds);
+      this._data.week.consumption = this._combineSeries(this._data.week, consumptionIds);
     } catch (error) {
       this._data = { today: {}, week: {} };
     }
@@ -1756,6 +1763,16 @@ class EmsEnergyInsightsCard extends HTMLElement {
       }));
     }
     return output;
+  }
+
+  _combineSeries(series, ids) {
+    const combined = new Map();
+    for (const id of ids) {
+      for (const point of series[id] || []) {
+        combined.set(point.label, (combined.get(point.label) || 0) + point.value);
+      }
+    }
+    return [...combined.entries()].map(([label, value]) => ({ label, value }));
   }
 
   _build() {
@@ -1781,7 +1798,7 @@ class EmsEnergyInsightsCard extends HTMLElement {
     this._title = this.shadowRoot.querySelector("h1");
     this._grid = this.shadowRoot.querySelector(".grid");
     this._panels = {};
-    for (const [kind, entity] of [["consumption", this._config.consumption_entity], ["export", this._config.export_entity]]) {
+    for (const [kind, entity] of [["consumption", this._config.consumption_high_entity || this._config.consumption_low_entity || this._config.consumption_entity], ["export", this._config.export_entity]]) {
       if (!entity) continue;
       for (const range of ["today", "week"]) {
         const panel = document.createElement("section");
@@ -1830,7 +1847,7 @@ class EmsEnergyInsightsCard extends HTMLElement {
     if (!this._built) return;
     for (const kind of ["consumption", "export"]) {
       for (const range of ["today", "week"]) {
-        const entity = this._config[`${kind}_entity`];
+        const entity = kind === "consumption" ? "consumption" : this._config[`${kind}_entity`];
         this._draw(this._data[range]?.[entity], this._panels[`${kind}_${range}`]);
       }
     }
@@ -1856,6 +1873,8 @@ class EmsEnergyInsightsCardEditor extends HTMLElement {
       this._form = document.createElement("ha-form");
       this._form.schema = [
         { name: "title", selector: { text: {} } },
+        { name: "consumption_high_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "consumption_low_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "consumption_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "export_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "background_color", selector: { color_rgb: {} } },
@@ -1863,7 +1882,7 @@ class EmsEnergyInsightsCardEditor extends HTMLElement {
         { name: "text_color", selector: { color_rgb: {} } },
         { name: "tile_color", selector: { color_rgb: {} } },
       ];
-      const labels = { title: "Titel", consumption_entity: "Totaal stroomverbruik (kWh)", export_entity: "Teruglevering (kWh)", background_color: "Achtergrondkleur", accent_color: "Grafiekkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
+      const labels = { title: "Titel", consumption_high_entity: "Verbruik hoogtarief (kWh)", consumption_low_entity: "Verbruik laagtarief (kWh)", consumption_entity: "Verbruik gecombineerd (bestaand)", export_entity: "Teruglevering (kWh)", background_color: "Achtergrondkleur", accent_color: "Grafiekkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
       this._form.computeLabel = (schema) => labels[schema.name] || schema.name;
       this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { type: "custom:ems-energy-insights-card", ...event.detail.value } }, bubbles: true, composed: true })));
       this.appendChild(this._form);
