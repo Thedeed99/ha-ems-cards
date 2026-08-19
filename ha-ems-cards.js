@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.11.0";
+const CARD_VERSION = "2.12.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2056,6 +2056,172 @@ class EmsPhasesCardEditor extends HTMLElement {
   }
 }
 
+class EmsSurplusCard extends HTMLElement {
+  static getConfigElement() { return document.createElement("ems-surplus-card-editor"); }
+  static getStubConfig() {
+    return { type: "custom:ems-surplus-card", title: "Zonne-overschot", surplus_entity: "", threshold: 500, ...STYLE_DEFAULTS };
+  }
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._built = false;
+  }
+
+  setConfig(config) {
+    this._config = { ...STYLE_DEFAULTS, ...config };
+    this._built = false;
+    this.shadowRoot.innerHTML = "";
+    if (this._hass) this._render();
+  }
+
+  set hass(hass) { this._hass = hass; this._render(); }
+  getCardSize() { return 4; }
+
+  _state(entity) { return entity && this._hass ? this._hass.states[entity] : undefined; }
+  _power(entity) {
+    const state = this._state(entity);
+    const value = Number(state?.state);
+    if (!Number.isFinite(value)) return 0;
+    return /kw/i.test(state?.attributes?.unit_of_measurement || "") ? value * 1000 : value;
+  }
+  _format(value) {
+    return `${value.toLocaleString(this._hass?.locale?.language || "nl", { maximumFractionDigits: 0 })} W`;
+  }
+  _moreInfo(entity) {
+    if (!entity) return;
+    const event = new Event("hass-more-info", { bubbles: true, composed: true });
+    event.detail = { entityId: entity };
+    this.dispatchEvent(event);
+  }
+  _suggestions() {
+    return [1, 2, 3].map((index) => ({
+      label: this._config[`suggestion_${index}_name`],
+      icon: this._config[`suggestion_${index}_icon`] || "mdi:lightbulb-on-outline",
+      threshold: Number(this._config[`suggestion_${index}_threshold`]),
+      entity: this._config[`suggestion_${index}_entity`],
+      actionEntity: this._config[`suggestion_${index}_action_entity`],
+    })).filter((item) => item.label && Number.isFinite(item.threshold));
+  }
+
+  _build() {
+    this.shadowRoot.innerHTML = `<style>
+      :host { display:block; }
+      ha-card { background:var(--ems-surplus-bg); color:var(--ems-surplus-text); border:0; border-radius:var(--ha-card-border-radius,18px); padding:16px; overflow:hidden; }
+      .header { display:flex; align-items:center; gap:10px; }
+      .header ha-icon { --mdc-icon-size:22px; color:var(--ems-surplus-accent); }
+      h1 { margin:0; font-size:1.15rem; font-weight:600; }
+      .reading { display:flex; align-items:baseline; justify-content:space-between; margin-top:14px; }
+      .reading-label { font-size:.75rem; opacity:.68; }
+      .reading-value { font-size:1.55rem; font-weight:700; }
+      .track { height:7px; margin-top:8px; border-radius:5px; background:rgba(255,255,255,.12); overflow:hidden; }
+      .fill { height:100%; width:0; background:var(--ems-surplus-accent); transition:width .35s ease; }
+      .hint { font-size:.73rem; opacity:.62; margin-top:6px; }
+      .suggestions { display:grid; gap:8px; margin-top:14px; }
+      .suggestion { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:11px; background:var(--ems-surplus-tile); }
+      .suggestion ha-icon { --mdc-icon-size:19px; color:var(--ems-surplus-accent); }
+      .suggestion-text { flex:1; min-width:0; }
+      .suggestion-name { font-size:.78rem; font-weight:600; }
+      .suggestion-threshold { font-size:.67rem; opacity:.6; margin-top:2px; }
+      .available { color:var(--ems-surplus-accent); }
+      .suggestion[data-action="true"] { cursor:pointer; }
+    </style><ha-card><div class="header"><ha-icon icon="mdi:solar-power"></ha-icon><h1></h1></div><div class="reading"><span class="reading-label">Teruglevering naar net</span><b class="reading-value"></b></div><div class="track"><div class="fill"></div></div><div class="hint"></div><div class="suggestions"></div></ha-card>`;
+    this._card = this.shadowRoot.querySelector("ha-card");
+    this._title = this.shadowRoot.querySelector("h1");
+    this._value = this.shadowRoot.querySelector(".reading-value");
+    this._fill = this.shadowRoot.querySelector(".fill");
+    this._hint = this.shadowRoot.querySelector(".hint");
+    this._suggestionsEl = this.shadowRoot.querySelector(".suggestions");
+    this._built = true;
+  }
+
+  _render() {
+    if (!this._hass) return;
+    if (!this._built) this._build();
+    const cfg = this._config;
+    const surplus = Math.max(0, this._power(cfg.surplus_entity));
+    const max = Math.max(Number(cfg.display_max) || 5000, Number(cfg.threshold) || 0, surplus);
+    this._card.style.setProperty("--ems-surplus-bg", toCssColor(cfg.background_color, "#1d3b33"));
+    this._card.style.setProperty("--ems-surplus-tile", toCssColor(cfg.tile_color, "rgba(255,255,255,.07)"));
+    this._card.style.setProperty("--ems-surplus-accent", toCssColor(cfg.accent_color, "#e8c547"));
+    this._card.style.setProperty("--ems-surplus-text", toCssColor(cfg.text_color, "#ffffff"));
+    this._title.textContent = cfg.title || "Zonne-overschot";
+    this._value.textContent = this._format(surplus);
+    this._fill.style.width = `${Math.min(100, surplus / max * 100)}%`;
+    this._hint.textContent = surplus >= (Number(cfg.threshold) || 0)
+      ? "Er is voldoende overschot voor een extra verbruiker."
+      : `Advies verschijnt vanaf ${this._format(Number(cfg.threshold) || 0)} overschot.`;
+    this._suggestionsEl.innerHTML = "";
+    for (const suggestion of this._suggestions().filter((item) => surplus >= item.threshold)) {
+      const row = document.createElement("div");
+      row.className = "suggestion";
+      row.dataset.action = String(Boolean(suggestion.actionEntity || suggestion.entity));
+      const icon = document.createElement("ha-icon");
+      icon.setAttribute("icon", suggestion.icon);
+      const text = document.createElement("div");
+      text.className = "suggestion-text";
+      const name = document.createElement("div");
+      name.className = "suggestion-name";
+      name.textContent = suggestion.label;
+      const threshold = document.createElement("div");
+      threshold.className = "suggestion-threshold";
+      threshold.textContent = suggestion.actionEntity ? "Nu beschikbaar · tik om te activeren" : "Nu beschikbaar";
+      threshold.classList.add("available");
+      text.append(name, threshold);
+      row.append(icon, text);
+      if (suggestion.actionEntity) {
+        row.addEventListener("click", () => {
+          const domain = suggestion.actionEntity.split(".")[0];
+          if (["switch", "light", "input_boolean", "fan"].includes(domain)) {
+            this._hass.callService(domain, "turn_on", { entity_id: suggestion.actionEntity });
+          } else {
+            this._moreInfo(suggestion.actionEntity);
+          }
+        });
+      } else if (suggestion.entity) {
+        row.addEventListener("click", () => this._moreInfo(suggestion.entity));
+      }
+      this._suggestionsEl.appendChild(row);
+    }
+  }
+}
+
+class EmsSurplusCardEditor extends HTMLElement {
+  setConfig(config) { this._config = { ...STYLE_DEFAULTS, ...config }; this._render(); }
+  set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      const schema = [
+        { name: "title", selector: { text: {} } },
+        { name: "surplus_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "threshold", selector: { number: { min: 0, max: 25000, step: 50, mode: "box" } } },
+        { name: "display_max", selector: { number: { min: 500, max: 50000, step: 500, mode: "box" } } },
+      ];
+      for (let index = 1; index <= 3; index += 1) {
+        schema.push({ name: `suggestion_${index}_name`, selector: { text: {} } });
+        schema.push({ name: `suggestion_${index}_threshold`, selector: { number: { min: 0, max: 25000, step: 50, mode: "box" } } });
+        schema.push({ name: `suggestion_${index}_icon`, selector: { icon: {} } });
+        schema.push({ name: `suggestion_${index}_entity`, selector: { entity: {} } });
+        schema.push({ name: `suggestion_${index}_action_entity`, selector: { entity: { domain: ["switch", "light", "input_boolean", "fan"] } } });
+      }
+      schema.push({ name: "background_color", selector: { color_rgb: {} } }, { name: "accent_color", selector: { color_rgb: {} } }, { name: "text_color", selector: { color_rgb: {} } }, { name: "tile_color", selector: { color_rgb: {} } });
+      const labels = { title: "Titel", surplus_entity: "Teruglevering naar net (W)", threshold: "Algemene adviesdrempel (W)", display_max: "Schaal van de balk (W)", background_color: "Achtergrondkleur", accent_color: "Accentkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
+      for (let index = 1; index <= 3; index += 1) { labels[`suggestion_${index}_name`] = `Advies ${index} naam`; labels[`suggestion_${index}_threshold`] = `Advies ${index} vanaf (W)`; labels[`suggestion_${index}_icon`] = `Advies ${index} icoon`; labels[`suggestion_${index}_entity`] = `Advies ${index} meer-info (optioneel)`; labels[`suggestion_${index}_action_entity`] = `Advies ${index} activeren (optioneel)`; }
+      this._form.schema = schema;
+      this._form.computeLabel = (field) => labels[field.name] || field.name;
+      this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { type: "custom:ems-surplus-card", ...event.detail.value } }, bubbles: true, composed: true })));
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+  }
+}
+
+customElements.define("ems-surplus-card", EmsSurplusCard);
+customElements.define("ems-surplus-card-editor", EmsSurplusCardEditor);
+
 customElements.define("ems-phases-card", EmsPhasesCard);
 customElements.define("ems-phases-card-editor", EmsPhasesCardEditor);
 
@@ -2103,6 +2269,13 @@ window.customCards.push(
     type: "ems-phases-card",
     name: "EMS Fasen",
     description: "Vermogen, stroom, voltage en groepenoverzicht per fase.",
+    preview: true,
+    documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
+  },
+  {
+    type: "ems-surplus-card",
+    name: "EMS Zonne-overschot",
+    description: "Advies voor laden of extra verbruik bij echte teruglevering naar het net.",
     preview: true,
     documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
   }
