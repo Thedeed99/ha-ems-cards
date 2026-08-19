@@ -1976,13 +1976,14 @@ class EmsPhasesCard extends HTMLElement {
       .fill { height:100%; width:0; background:var(--ems-phase-accent); transition:width .3s ease; }
       .fill.high { background:#ff453a; }
       .groups { margin-top:12px; border-radius:12px; overflow:hidden; background:var(--ems-phase-tile); }
-      .groups-head, .group { display:grid; grid-template-columns:72px 1fr 56px; gap:8px; padding:6px 9px; font-size:.68rem; }
+      .groups-head, .group { display:grid; grid-template-columns:1fr 56px; gap:8px; padding:6px 9px; font-size:.68rem; }
       .groups-head { opacity:.55; border-bottom:1px solid rgba(255,255,255,.12); }
       .group { border-bottom:1px solid rgba(255,255,255,.06); }
       .group:last-child { border-bottom:0; }
+      .group > span:first-child { min-width:0; overflow-wrap:anywhere; }
       .group-phase { text-align:right; color:var(--ems-phase-accent); font-weight:600; }
       .empty { opacity:.6; text-align:center; padding:12px; font-size:.76rem; }
-      @media (max-width:560px) { .power { font-size:1.05rem; } .groups-head,.group { grid-template-columns:58px 1fr 42px; } }
+      @media (max-width:560px) { .power { font-size:1.05rem; } .groups-head,.group { grid-template-columns:1fr 42px; } }
     </style><ha-card><div class="header"><ha-icon icon="mdi:transmission-tower"></ha-icon><h1></h1></div><div class="phases"></div><div class="groups"></div></ha-card>`;
     this._card = this.shadowRoot.querySelector("ha-card");
     this._title = this.shadowRoot.querySelector("h1");
@@ -2022,7 +2023,10 @@ class EmsPhasesCard extends HTMLElement {
     });
     const groups = this._groups();
     this._groupsEl.innerHTML = groups.length
-      ? `<div class="groups-head"><span>Groep</span><span>Omschrijving</span><span>Fase</span></div>${groups.map((group) => `<div class="group"><span>${group.name || ""}</span><span>${group.description || ""}</span><span class="group-phase">Fase ${group.phase || "-"}</span></div>`).join("")}`
+      ? `<div class="groups-head"><span>Groep</span><span>Fase</span></div>${groups.map((group) => {
+        const phase = group.phase ?? group.fase ?? group.phase_number ?? "-";
+        return `<div class="group"><span>${group.name || ""}</span><span class="group-phase">Fase ${phase}</span></div>`;
+      }).join("")}`
       : `<div class="empty">Voeg groepen toe via de kaart-editor.</div>`;
   }
 }
