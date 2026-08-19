@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.5.0";
+const CARD_VERSION = "2.6.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -1665,6 +1665,214 @@ class EmsConsumersCardEditor extends EmsRepeaterEditor {
   }
 }
 
+class EmsEnergyInsightsCard extends HTMLElement {
+  static getConfigElement() {
+    return document.createElement("ems-energy-insights-card-editor");
+  }
+
+  static getStubConfig() {
+    return {
+      type: "custom:ems-energy-insights-card",
+      title: "Energie-inzichten",
+      ...STYLE_DEFAULTS,
+    };
+  }
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._built = false;
+    this._data = { today: {}, week: {} };
+    this._lastFetch = 0;
+  }
+
+  setConfig(config) {
+    this._config = { ...STYLE_DEFAULTS, ...config };
+    this._built = false;
+    this.shadowRoot.innerHTML = "";
+    if (this._hass) this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+    this._fetchData();
+  }
+
+  getCardSize() {
+    return 9;
+  }
+
+  _lang() {
+    return (this._hass?.locale?.language || this._hass?.language || "nl").slice(0, 2);
+  }
+
+  _text(key) {
+    const labels = {
+      nl: { title: "Energie-inzichten", consumption: "Verbruik", export: "Teruglevering", today: "Vandaag", week: "Afgelopen week", noData: "Nog geen gegevens" },
+      en: { title: "Energy insights", consumption: "Consumption", export: "Export", today: "Today", week: "Last week", noData: "No data yet" },
+    };
+    return (labels[this._lang()] || labels.nl)[key];
+  }
+
+  _format(value) {
+    return Number(value || 0).toLocaleString(this._lang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  async _fetchData() {
+    const ids = [this._config.consumption_entity, this._config.export_entity].filter(Boolean);
+    if (!this._hass || !ids.length || Date.now() - this._lastFetch < 300000) return;
+    this._lastFetch = Date.now();
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const week = new Date(today);
+    week.setDate(week.getDate() - 6);
+    try {
+      const [todayResult, weekResult] = await Promise.all([
+        this._hass.callWS({ type: "recorder/statistics_during_period", start_time: today.toISOString(), end_time: now.toISOString(), statistic_ids: ids, period: "hour", types: ["change"] }),
+        this._hass.callWS({ type: "recorder/statistics_during_period", start_time: week.toISOString(), end_time: now.toISOString(), statistic_ids: ids, period: "day", types: ["change"] }),
+      ]);
+      this._data.today = this._mapSeries(todayResult, ids, "hour");
+      this._data.week = this._mapSeries(weekResult, ids, "day");
+    } catch (error) {
+      this._data = { today: {}, week: {} };
+    }
+    this._drawCharts();
+  }
+
+  _mapSeries(result, ids, period) {
+    const output = {};
+    for (const id of ids) {
+      output[id] = (result?.[id] || []).map((point) => ({
+        label: period === "hour"
+          ? `${String(new Date(point.start).getHours()).padStart(2, "0")}:00`
+          : new Date(point.start).toLocaleDateString(this._lang(), { weekday: "short" }),
+        value: Math.max(0, Number(point.change) || 0),
+      }));
+    }
+    return output;
+  }
+
+  _build() {
+    this.shadowRoot.innerHTML = `<style>
+      :host { display: block; }
+      ha-card { background: var(--ems-bg); color: var(--ems-text); border: none; border-radius: var(--ha-card-border-radius, 18px); padding: 18px; overflow: hidden; }
+      .header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+      .header ha-icon { --mdc-icon-size: 22px; color: var(--ems-accent); }
+      h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .panel { background: var(--ems-tile); border-radius: 12px; padding: 10px; min-width: 0; }
+      .head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+      .label { font-size: .76rem; opacity: .72; }
+      .total { font-size: .9rem; font-weight: 700; white-space: nowrap; }
+      .bars { height: 112px; display: flex; align-items: flex-end; gap: 3px; margin-top: 10px; }
+      .bar { flex: 1; min-width: 0; min-height: 2px; border-radius: 3px 3px 0 0; background: var(--ems-accent); opacity: .86; }
+      .bar[data-empty="true"] { background: rgba(255,255,255,.14); }
+      .axis { display: flex; justify-content: space-between; font-size: .6rem; opacity: .48; margin-top: 5px; }
+      .empty { height: 112px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: .76rem; opacity: .55; }
+      @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+    </style><ha-card><div class="header"><ha-icon icon="mdi:chart-line"></ha-icon><h1></h1></div><div class="grid"></div></ha-card>`;
+    this._card = this.shadowRoot.querySelector("ha-card");
+    this._title = this.shadowRoot.querySelector("h1");
+    this._grid = this.shadowRoot.querySelector(".grid");
+    this._panels = {};
+    for (const [kind, entity] of [["consumption", this._config.consumption_entity], ["export", this._config.export_entity]]) {
+      if (!entity) continue;
+      for (const range of ["today", "week"]) {
+        const panel = document.createElement("section");
+        panel.className = "panel";
+        panel.innerHTML = `<div class="head"><span class="label"></span><b class="total"></b></div><div class="bars"></div><div class="axis"></div>`;
+        panel.querySelector(".label").textContent = `${this._text(kind)} · ${this._text(range)}`;
+        this._grid.appendChild(panel);
+        this._panels[`${kind}_${range}`] = { bars: panel.querySelector(".bars"), total: panel.querySelector(".total"), axis: panel.querySelector(".axis") };
+      }
+    }
+    this._built = true;
+  }
+
+  _draw(series, panel) {
+    if (!panel) return;
+    panel.bars.innerHTML = "";
+    if (!series?.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = this._text("noData");
+      panel.bars.appendChild(empty);
+      panel.total.textContent = "0,00 kWh";
+      panel.axis.textContent = "";
+      return;
+    }
+    const max = Math.max(...series.map((item) => item.value), 0.001);
+    const total = series.reduce((sum, item) => sum + item.value, 0);
+    for (const item of series) {
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      bar.style.height = `${item.value ? Math.max(4, (item.value / max) * 100) : 2}%`;
+      bar.dataset.empty = String(item.value <= 0);
+      bar.title = `${item.label}: ${this._format(item.value)} kWh`;
+      panel.bars.appendChild(bar);
+    }
+    panel.total.textContent = `${this._format(total)} kWh`;
+    panel.axis.innerHTML = "";
+    [series[0], series[Math.floor(series.length / 2)], series[series.length - 1]].forEach((item) => {
+      const label = document.createElement("span");
+      label.textContent = item.label;
+      panel.axis.appendChild(label);
+    });
+  }
+
+  _drawCharts() {
+    if (!this._built) return;
+    for (const kind of ["consumption", "export"]) {
+      for (const range of ["today", "week"]) {
+        const entity = this._config[`${kind}_entity`];
+        this._draw(this._data[range]?.[entity], this._panels[`${kind}_${range}`]);
+      }
+    }
+  }
+
+  _render() {
+    if (!this._hass) return;
+    if (!this._built) this._build();
+    this._card.style.setProperty("--ems-bg", toCssColor(this._config.background_color, STYLE_DEFAULTS.background_color));
+    this._card.style.setProperty("--ems-accent", toCssColor(this._config.accent_color, STYLE_DEFAULTS.accent_color));
+    this._card.style.setProperty("--ems-text", toCssColor(this._config.text_color, STYLE_DEFAULTS.text_color));
+    this._card.style.setProperty("--ems-tile", toCssColor(this._config.tile_color, "rgba(255,255,255,.07)"));
+    this._title.textContent = this._config.title || this._text("title");
+    this._drawCharts();
+  }
+}
+
+class EmsEnergyInsightsCardEditor extends HTMLElement {
+  setConfig(config) { this._config = { ...STYLE_DEFAULTS, ...config }; this._render(); }
+  set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.schema = [
+        { name: "title", selector: { text: {} } },
+        { name: "consumption_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "export_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "background_color", selector: { color_rgb: {} } },
+        { name: "accent_color", selector: { color_rgb: {} } },
+        { name: "text_color", selector: { color_rgb: {} } },
+        { name: "tile_color", selector: { color_rgb: {} } },
+      ];
+      const labels = { title: "Titel", consumption_entity: "Totaal stroomverbruik (kWh)", export_entity: "Teruglevering (kWh)", background_color: "Achtergrondkleur", accent_color: "Grafiekkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
+      this._form.computeLabel = (schema) => labels[schema.name] || schema.name;
+      this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { type: "custom:ems-energy-insights-card", ...event.detail.value } }, bubbles: true, composed: true })));
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+  }
+}
+
+customElements.define("ems-energy-insights-card", EmsEnergyInsightsCard);
+customElements.define("ems-energy-insights-card-editor", EmsEnergyInsightsCardEditor);
+
 customElements.define("ems-overview-card", EmsOverviewCard);
 customElements.define("ems-overview-card-editor", EmsOverviewCardEditor);
 customElements.define("ems-devices-card", EmsDevicesCard);
@@ -1692,6 +1900,13 @@ window.customCards.push(
     type: "ems-consumers-card",
     name: "EMS Verbruikers",
     description: "Losse verbruikers in een passend EMS-raster met lichte tekst en dezelfde achtergrond.",
+    preview: true,
+    documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
+  },
+  {
+    type: "ems-energy-insights-card",
+    name: "EMS Energie-inzichten",
+    description: "Totaal stroomverbruik en teruglevering per uur en per dag.",
     preview: true,
     documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
   }
