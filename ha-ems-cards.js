@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.15.0";
+const CARD_VERSION = "2.16.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2107,6 +2107,7 @@ class EmsSurplusCard extends HTMLElement {
       offThreshold: Number(this._config[`suggestion_${index}_off_threshold`]),
       entity: this._config[`suggestion_${index}_entity`],
       actionEntity: this._config[`suggestion_${index}_action_entity`],
+      statusEntity: this._config[`suggestion_${index}_status_entity`],
     })).filter((item) => item.label && Number.isFinite(item.threshold));
   }
 
@@ -2159,7 +2160,8 @@ class EmsSurplusCard extends HTMLElement {
       : `Advies verschijnt vanaf ${this._format(Number(cfg.threshold) || 0)} overschot.`;
     this._suggestionsEl.innerHTML = "";
     for (const suggestion of this._suggestions()) {
-      const isOn = suggestion.actionEntity && ["on", "home", "true"].includes(this._state(suggestion.actionEntity)?.state);
+      const statusEntity = suggestion.statusEntity || suggestion.actionEntity;
+      const isOn = statusEntity && ["on", "home", "true", "active", "running"].includes(this._state(statusEntity)?.state);
       const shouldStart = surplus >= suggestion.threshold;
       const shouldStop = isOn && Number.isFinite(suggestion.offThreshold) && surplus <= suggestion.offThreshold;
       if (!shouldStart && !isOn) continue;
@@ -2218,10 +2220,11 @@ class EmsSurplusCardEditor extends HTMLElement {
         schema.push({ name: `suggestion_${index}_icon`, selector: { icon: {} } });
         schema.push({ name: `suggestion_${index}_entity`, selector: { entity: {} } });
         schema.push({ name: `suggestion_${index}_action_entity`, selector: { entity: { domain: ["switch", "light", "input_boolean", "fan"] } } });
+        schema.push({ name: `suggestion_${index}_status_entity`, selector: { entity: {} } });
       }
       schema.push({ name: "background_color", selector: { color_rgb: {} } }, { name: "accent_color", selector: { color_rgb: {} } }, { name: "text_color", selector: { color_rgb: {} } }, { name: "tile_color", selector: { color_rgb: {} } });
       const labels = { title: "Titel", surplus_entity: "Netvermogen (+ import / - export)", invert_surplus_entity: "Negatief vermogen als overschot gebruiken", threshold: "Algemene adviesdrempel (W)", display_max: "Schaal van de balk (W)", background_color: "Achtergrondkleur", accent_color: "Accentkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
-      for (let index = 1; index <= 3; index += 1) { labels[`suggestion_${index}_name`] = `Advies ${index} naam`; labels[`suggestion_${index}_threshold`] = `Advies ${index} inschakelen vanaf (W)`; labels[`suggestion_${index}_off_threshold`] = `Advies ${index} uitschakelen onder (W)`; labels[`suggestion_${index}_icon`] = `Advies ${index} icoon`; labels[`suggestion_${index}_entity`] = `Advies ${index} meer-info (optioneel)`; labels[`suggestion_${index}_action_entity`] = `Advies ${index} activeren (optioneel)`; }
+      for (let index = 1; index <= 3; index += 1) { labels[`suggestion_${index}_name`] = `Advies ${index} naam`; labels[`suggestion_${index}_threshold`] = `Advies ${index} inschakelen vanaf (W)`; labels[`suggestion_${index}_off_threshold`] = `Advies ${index} uitschakelen onder (W)`; labels[`suggestion_${index}_icon`] = `Advies ${index} icoon`; labels[`suggestion_${index}_entity`] = `Advies ${index} meer-info (optioneel)`; labels[`suggestion_${index}_action_entity`] = `Advies ${index} activeren (optioneel)`; labels[`suggestion_${index}_status_entity`] = `Advies ${index} status aan/uit`; }
       this._form.schema = schema;
       this._form.computeLabel = (field) => labels[field.name] || field.name;
       this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { type: "custom:ems-surplus-card", ...event.detail.value } }, bubbles: true, composed: true })));
