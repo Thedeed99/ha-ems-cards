@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.7.0";
+const CARD_VERSION = "2.8.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -1713,8 +1713,8 @@ class EmsEnergyInsightsCard extends HTMLElement {
 
   _text(key) {
     const labels = {
-      nl: { title: "Energie-inzichten", consumption: "Verbruik", export: "Teruglevering", today: "Vandaag", week: "Afgelopen week", noData: "Nog geen gegevens" },
-      en: { title: "Energy insights", consumption: "Consumption", export: "Export", today: "Today", week: "Last week", noData: "No data yet" },
+      nl: { title: "Energie-inzichten", production: "Productie", consumption: "Verbruik", export: "Teruglevering", today: "Vandaag", week: "Afgelopen week", noData: "Nog geen gegevens" },
+      en: { title: "Energy insights", production: "Production", consumption: "Consumption", export: "Export", today: "Today", week: "Last week", noData: "No data yet" },
     };
     return (labels[this._lang()] || labels.nl)[key];
   }
@@ -1729,7 +1729,12 @@ class EmsEnergyInsightsCard extends HTMLElement {
       this._config.consumption_low_entity,
       this._config.consumption_entity,
     ].filter(Boolean);
-    const ids = [...new Set([...consumptionIds, this._config.export_entity].filter(Boolean))];
+    const productionIds = [
+      this._config.production_high_entity,
+      this._config.production_low_entity,
+      this._config.production_entity,
+    ].filter(Boolean);
+    const ids = [...new Set([...consumptionIds, ...productionIds, this._config.export_entity].filter(Boolean))];
     if (!this._hass || !ids.length || Date.now() - this._lastFetch < 300000) return;
     this._lastFetch = Date.now();
     const now = new Date();
@@ -1746,6 +1751,8 @@ class EmsEnergyInsightsCard extends HTMLElement {
       this._data.week = this._mapSeries(weekResult, ids, "day");
       this._data.today.consumption = this._combineSeries(this._data.today, consumptionIds);
       this._data.week.consumption = this._combineSeries(this._data.week, consumptionIds);
+      this._data.today.production = this._combineSeries(this._data.today, productionIds);
+      this._data.week.production = this._combineSeries(this._data.week, productionIds);
     } catch (error) {
       this._data = { today: {}, week: {} };
     }
@@ -1798,7 +1805,11 @@ class EmsEnergyInsightsCard extends HTMLElement {
     this._title = this.shadowRoot.querySelector("h1");
     this._grid = this.shadowRoot.querySelector(".grid");
     this._panels = {};
-    for (const [kind, entity] of [["consumption", this._config.consumption_high_entity || this._config.consumption_low_entity || this._config.consumption_entity], ["export", this._config.export_entity]]) {
+    for (const [kind, entity] of [
+      ["production", this._config.production_high_entity || this._config.production_low_entity || this._config.production_entity],
+      ["consumption", this._config.consumption_high_entity || this._config.consumption_low_entity || this._config.consumption_entity],
+      ["export", this._config.export_entity],
+    ]) {
       if (!entity) continue;
       for (const range of ["today", "week"]) {
         const panel = document.createElement("section");
@@ -1845,9 +1856,11 @@ class EmsEnergyInsightsCard extends HTMLElement {
 
   _drawCharts() {
     if (!this._built) return;
-    for (const kind of ["consumption", "export"]) {
+    for (const kind of ["production", "consumption", "export"]) {
       for (const range of ["today", "week"]) {
-        const entity = kind === "consumption" ? "consumption" : this._config[`${kind}_entity`];
+        const entity = ["consumption", "production"].includes(kind)
+          ? kind
+          : this._config[`${kind}_entity`];
         this._draw(this._data[range]?.[entity], this._panels[`${kind}_${range}`]);
       }
     }
@@ -1873,6 +1886,9 @@ class EmsEnergyInsightsCardEditor extends HTMLElement {
       this._form = document.createElement("ha-form");
       this._form.schema = [
         { name: "title", selector: { text: {} } },
+        { name: "production_high_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "production_low_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "production_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "consumption_high_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "consumption_low_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "consumption_entity", selector: { entity: { domain: ["sensor"] } } },
@@ -1882,7 +1898,7 @@ class EmsEnergyInsightsCardEditor extends HTMLElement {
         { name: "text_color", selector: { color_rgb: {} } },
         { name: "tile_color", selector: { color_rgb: {} } },
       ];
-      const labels = { title: "Titel", consumption_high_entity: "Verbruik hoogtarief (kWh)", consumption_low_entity: "Verbruik laagtarief (kWh)", consumption_entity: "Verbruik gecombineerd (bestaand)", export_entity: "Teruglevering (kWh)", background_color: "Achtergrondkleur", accent_color: "Grafiekkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
+      const labels = { title: "Titel", production_high_entity: "Productie hoogtarief (kWh)", production_low_entity: "Productie laagtarief (kWh)", production_entity: "Productie gecombineerd (bestaand)", consumption_high_entity: "Verbruik hoogtarief (kWh)", consumption_low_entity: "Verbruik laagtarief (kWh)", consumption_entity: "Verbruik gecombineerd (bestaand)", export_entity: "Teruglevering (kWh)", background_color: "Achtergrondkleur", accent_color: "Grafiekkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
       this._form.computeLabel = (schema) => labels[schema.name] || schema.name;
       this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { type: "custom:ems-energy-insights-card", ...event.detail.value } }, bubbles: true, composed: true })));
       this.appendChild(this._form);
