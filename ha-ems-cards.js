@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.3.0";
+const CARD_VERSION = "2.4.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -1139,7 +1139,8 @@ class EmsDevicesCard extends EmsBaseCard {
         display: flex; flex-direction: column; justify-content: center;
         min-height: 80px; padding: 8px;
       }
-      .tile-value { font-size: 1.6rem; }
+      .tile-name { font-size: var(--ems-name-size, 11px); font-weight: 400; }
+      .tile-value { font-size: var(--ems-value-size, 26px); font-weight: 700; }
     `;
     root.appendChild(style);
 
@@ -1189,6 +1190,8 @@ class EmsDevicesCard extends EmsBaseCard {
     if (!this._hass || !this._config) return;
     if (!this._built) this._build();
     this._applyColors(this._card);
+    this._card.style.setProperty("--ems-name-size", `${Number(this._config.name_font_size) || 11}px`);
+    this._card.style.setProperty("--ems-value-size", `${Number(this._config.value_font_size) || 26}px`);
 
     for (const { device, value } of this._deviceEls) {
       value.textContent = this._formatValue(device.entity, Number(device.decimals) || 0);
@@ -1276,6 +1279,8 @@ const LABELS = {
   disable_animation: "Animatie uitzetten",
   animation_speed: "Snelheid animatie (s)",
   thousands_separator: "Scheidingsteken duizendtallen",
+  name_font_size: "Lettergrootte naam (px)",
+  value_font_size: "Lettergrootte waarde (px)",
   auto_scale: "Schaal automatisch vergroten",
   flow_auto_scale: "Schaal energiestroom automatisch vergroten",
 };
@@ -1537,6 +1542,8 @@ class EmsDevicesCardEditor extends EmsRepeaterEditor {
       ],
       baseSchema: [
         { name: "title", selector: { text: {} } },
+        { name: "name_font_size", selector: { number: { min: 8, max: 24, step: 1, mode: "box" } } },
+        { name: "value_font_size", selector: { number: { min: 12, max: 48, step: 1, mode: "box" } } },
         { name: "", type: "expandable", title: "Weergave", schema: APPEARANCE_SCHEMA },
       ],
     });
