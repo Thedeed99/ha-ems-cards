@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.12.0";
+const CARD_VERSION = "2.13.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2100,6 +2100,7 @@ class EmsSurplusCard extends HTMLElement {
       label: this._config[`suggestion_${index}_name`],
       icon: this._config[`suggestion_${index}_icon`] || "mdi:lightbulb-on-outline",
       threshold: Number(this._config[`suggestion_${index}_threshold`]),
+      offThreshold: Number(this._config[`suggestion_${index}_off_threshold`]),
       entity: this._config[`suggestion_${index}_entity`],
       actionEntity: this._config[`suggestion_${index}_action_entity`],
     })).filter((item) => item.label && Number.isFinite(item.threshold));
@@ -2153,7 +2154,11 @@ class EmsSurplusCard extends HTMLElement {
       ? "Er is voldoende overschot voor een extra verbruiker."
       : `Advies verschijnt vanaf ${this._format(Number(cfg.threshold) || 0)} overschot.`;
     this._suggestionsEl.innerHTML = "";
-    for (const suggestion of this._suggestions().filter((item) => surplus >= item.threshold)) {
+    for (const suggestion of this._suggestions()) {
+      const isOn = suggestion.actionEntity && ["on", "home", "true"].includes(this._state(suggestion.actionEntity)?.state);
+      const shouldStart = surplus >= suggestion.threshold;
+      const shouldStop = isOn && Number.isFinite(suggestion.offThreshold) && surplus <= suggestion.offThreshold;
+      if (!shouldStart && !shouldStop) continue;
       const row = document.createElement("div");
       row.className = "suggestion";
       row.dataset.action = String(Boolean(suggestion.actionEntity || suggestion.entity));
@@ -2166,7 +2171,9 @@ class EmsSurplusCard extends HTMLElement {
       name.textContent = suggestion.label;
       const threshold = document.createElement("div");
       threshold.className = "suggestion-threshold";
-      threshold.textContent = suggestion.actionEntity ? "Nu beschikbaar · tik om te activeren" : "Nu beschikbaar";
+      threshold.textContent = shouldStop
+        ? "Te weinig overschot · tik om uit te schakelen"
+        : suggestion.actionEntity ? "Nu beschikbaar · tik om te activeren" : "Nu beschikbaar";
       threshold.classList.add("available");
       text.append(name, threshold);
       row.append(icon, text);
@@ -2174,7 +2181,7 @@ class EmsSurplusCard extends HTMLElement {
         row.addEventListener("click", () => {
           const domain = suggestion.actionEntity.split(".")[0];
           if (["switch", "light", "input_boolean", "fan"].includes(domain)) {
-            this._hass.callService(domain, "turn_on", { entity_id: suggestion.actionEntity });
+            this._hass.callService(domain, shouldStop ? "turn_off" : "turn_on", { entity_id: suggestion.actionEntity });
           } else {
             this._moreInfo(suggestion.actionEntity);
           }
@@ -2202,13 +2209,14 @@ class EmsSurplusCardEditor extends HTMLElement {
       for (let index = 1; index <= 3; index += 1) {
         schema.push({ name: `suggestion_${index}_name`, selector: { text: {} } });
         schema.push({ name: `suggestion_${index}_threshold`, selector: { number: { min: 0, max: 25000, step: 50, mode: "box" } } });
+        schema.push({ name: `suggestion_${index}_off_threshold`, selector: { number: { min: 0, max: 25000, step: 50, mode: "box" } } });
         schema.push({ name: `suggestion_${index}_icon`, selector: { icon: {} } });
         schema.push({ name: `suggestion_${index}_entity`, selector: { entity: {} } });
         schema.push({ name: `suggestion_${index}_action_entity`, selector: { entity: { domain: ["switch", "light", "input_boolean", "fan"] } } });
       }
       schema.push({ name: "background_color", selector: { color_rgb: {} } }, { name: "accent_color", selector: { color_rgb: {} } }, { name: "text_color", selector: { color_rgb: {} } }, { name: "tile_color", selector: { color_rgb: {} } });
       const labels = { title: "Titel", surplus_entity: "Teruglevering naar net (W)", threshold: "Algemene adviesdrempel (W)", display_max: "Schaal van de balk (W)", background_color: "Achtergrondkleur", accent_color: "Accentkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur" };
-      for (let index = 1; index <= 3; index += 1) { labels[`suggestion_${index}_name`] = `Advies ${index} naam`; labels[`suggestion_${index}_threshold`] = `Advies ${index} vanaf (W)`; labels[`suggestion_${index}_icon`] = `Advies ${index} icoon`; labels[`suggestion_${index}_entity`] = `Advies ${index} meer-info (optioneel)`; labels[`suggestion_${index}_action_entity`] = `Advies ${index} activeren (optioneel)`; }
+      for (let index = 1; index <= 3; index += 1) { labels[`suggestion_${index}_name`] = `Advies ${index} naam`; labels[`suggestion_${index}_threshold`] = `Advies ${index} inschakelen vanaf (W)`; labels[`suggestion_${index}_off_threshold`] = `Advies ${index} uitschakelen onder (W)`; labels[`suggestion_${index}_icon`] = `Advies ${index} icoon`; labels[`suggestion_${index}_entity`] = `Advies ${index} meer-info (optioneel)`; labels[`suggestion_${index}_action_entity`] = `Advies ${index} activeren (optioneel)`; }
       this._form.schema = schema;
       this._form.computeLabel = (field) => labels[field.name] || field.name;
       this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { type: "custom:ems-surplus-card", ...event.detail.value } }, bubbles: true, composed: true })));
