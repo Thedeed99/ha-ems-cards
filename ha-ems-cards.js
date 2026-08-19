@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.4.0";
+const CARD_VERSION = "2.5.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -1550,10 +1550,127 @@ class EmsDevicesCardEditor extends EmsRepeaterEditor {
   }
 }
 
+class EmsConsumersCard extends EmsBaseCard {
+  static getConfigElement() {
+    return document.createElement("ems-consumers-card-editor");
+  }
+
+  static getStubConfig() {
+    return {
+      type: "custom:ems-consumers-card",
+      columns: 3,
+      devices: [],
+      background_color: "#1d3b33",
+      tile_color: "#1d3b33",
+      text_color: "#ffffff",
+      off_color: "#ff453a",
+      tile_radius: 16,
+      name_font_size: 11,
+      value_font_size: 26,
+    };
+  }
+
+  constructor() {
+    super();
+    this._built = false;
+  }
+
+  getCardSize() {
+    return 1 + Math.ceil((this._config.devices?.length || 0) / (Number(this._config.columns) || 3));
+  }
+
+  _build() {
+    const root = this.shadowRoot;
+    root.innerHTML = `<style>
+      :host { display: block; }
+      ha-card { background: transparent; border: none; box-shadow: none; padding: 0; }
+      .grid { display: grid; grid-template-columns: repeat(var(--ems-columns, 3), minmax(0, 1fr)); gap: 8px; }
+      .tile { background: var(--ems-bg); border-radius: var(--ems-radius); min-height: 80px; padding: 8px; box-sizing: border-box;
+        display: grid; grid-template-areas: "name" "value"; grid-template-rows: 18px 1fr; justify-items: center; align-items: center;
+        cursor: pointer; transition: filter .15s ease; }
+      .tile:hover { filter: brightness(1.08); }
+      .name { grid-area: name; color: rgba(255,255,255,.65); font-size: var(--ems-name-size, 11px); font-weight: 400; text-align: center;
+        line-height: 18px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .value { grid-area: value; color: var(--ems-text); font-size: var(--ems-value-size, 26px); font-weight: 700; line-height: 1;
+        text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; align-self: center; }
+      .empty { min-height: 80px; border-radius: var(--ems-radius); background: var(--ems-bg); color: var(--ems-text); opacity: .7; display: flex; align-items: center; justify-content: center; padding: 12px; text-align: center; }
+    </style><ha-card><div class="grid"></div></ha-card>`;
+
+    this._card = root.querySelector("ha-card");
+    this._grid = root.querySelector(".grid");
+    this._tileEls = [];
+    const devices = Array.isArray(this._config.devices)
+      ? this._config.devices.filter((device) => device?.entity)
+      : [];
+    this._grid.style.setProperty("--ems-columns", String(Number(this._config.columns) || 3));
+
+    if (!devices.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = this._t("empty");
+      this._grid.appendChild(empty);
+    }
+
+    for (const device of devices) {
+      const tile = document.createElement("div");
+      tile.className = "tile";
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = device.name || this._friendlyName(device.entity);
+      const value = document.createElement("div");
+      value.className = "value";
+      tile.append(name, value);
+      tile.addEventListener("click", () => this._tap(device));
+      this._grid.appendChild(tile);
+      this._tileEls.push({ device, value });
+    }
+    this._built = true;
+  }
+
+  _render() {
+    if (!this._hass) return;
+    if (!this._built) this._build();
+    this._applyColors(this._card);
+    this._card.style.setProperty("--ems-bg", toCssColor(this._config.tile_color || this._config.background_color, "#1d3b33"));
+    this._card.style.setProperty("--ems-radius", `${Number(this._config.tile_radius) || 16}px`);
+    this._card.style.setProperty("--ems-name-size", `${Number(this._config.name_font_size) || 11}px`);
+    this._card.style.setProperty("--ems-value-size", `${Number(this._config.value_font_size) || 26}px`);
+    for (const { device, value } of this._tileEls) {
+      value.textContent = this._formatValue(device.entity, Number(device.decimals) || 0);
+      value.style.color = device.switch_entity && !this._isOn(device.switch_entity)
+        ? "var(--ems-off)"
+        : "var(--ems-text)";
+    }
+  }
+}
+
+class EmsConsumersCardEditor extends EmsRepeaterEditor {
+  constructor() {
+    super({
+      cardType: "custom:ems-consumers-card",
+      listKey: "devices",
+      itemSchema: [
+        { name: "entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "name", selector: { text: {} } },
+        { name: "switch_entity", selector: { entity: { domain: ["switch", "light", "input_boolean", "fan"] } } },
+        { name: "decimals", selector: { number: { min: 0, max: 3, step: 1, mode: "box" } } },
+      ],
+      baseSchema: [
+        { name: "columns", selector: { number: { min: 1, max: 6, step: 1, mode: "box" } } },
+        { name: "name_font_size", selector: { number: { min: 8, max: 24, step: 1, mode: "box" } } },
+        { name: "value_font_size", selector: { number: { min: 12, max: 48, step: 1, mode: "box" } } },
+        { name: "", type: "expandable", title: "Weergave", schema: APPEARANCE_SCHEMA },
+      ],
+    });
+  }
+}
+
 customElements.define("ems-overview-card", EmsOverviewCard);
 customElements.define("ems-overview-card-editor", EmsOverviewCardEditor);
 customElements.define("ems-devices-card", EmsDevicesCard);
 customElements.define("ems-devices-card-editor", EmsDevicesCardEditor);
+customElements.define("ems-consumers-card", EmsConsumersCard);
+customElements.define("ems-consumers-card-editor", EmsConsumersCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push(
@@ -1568,6 +1685,13 @@ window.customCards.push(
     type: "ems-devices-card",
     name: "EMS Apparaten",
     description: "Raster met vermogen per apparaat, tik om te schakelen.",
+    preview: true,
+    documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
+  },
+  {
+    type: "ems-consumers-card",
+    name: "EMS Verbruikers",
+    description: "Losse verbruikers in een passend EMS-raster met lichte tekst en dezelfde achtergrond.",
     preview: true,
     documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
   }
