@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.27.1";
+const CARD_VERSION = "2.28.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2358,6 +2358,8 @@ class EmsUpsCard extends HTMLElement {
       .device svg { width:78px; height:auto; }
       .device-fill { transition:height .35s ease, y .35s ease, fill .3s ease; }
       .level { font-size:2.1rem; font-weight:700; margin-top:10px; text-align:center; }
+      .power-supply { display:none; width:100%; margin-top:12px; padding:11px 18px; border:0; border-radius:999px;
+        background:var(--ems-ups-accent); color:var(--ems-ups-on-accent); font:inherit; font-weight:600; cursor:pointer; }
       .stats { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-top:14px; }
       .stat { background:var(--ems-ups-tile); border-radius:12px; padding:9px 10px; cursor:pointer; text-align:center; }
       .stat .k { font-size:.68rem; opacity:.65; }
@@ -2380,6 +2382,7 @@ class EmsUpsCard extends HTMLElement {
         </svg>
       </div>
       <div class="level"></div>
+      <button class="power-supply"></button>
       <div class="stats"></div>
     </ha-card>`;
     this._card = this.shadowRoot.querySelector("ha-card");
@@ -2387,6 +2390,13 @@ class EmsUpsCard extends HTMLElement {
     this._statusEl = this.shadowRoot.querySelector(".status");
     this._levelEl = this.shadowRoot.querySelector(".level");
     this._deviceFill = this.shadowRoot.querySelector(".device-fill");
+    this._powerSupplyEl = this.shadowRoot.querySelector(".power-supply");
+    this._powerSupplyEl.addEventListener("click", () => {
+      const entity = this._config.power_supply_switch;
+      const state = this._state(entity);
+      if (!entity || !state) return;
+      this._hass.callService("switch", state.state === "on" ? "turn_off" : "turn_on", { entity_id: entity });
+    });
 
     const cfg = this._config;
     const statsEl = this.shadowRoot.querySelector(".stats");
@@ -2423,6 +2433,11 @@ class EmsUpsCard extends HTMLElement {
     this._card.style.setProperty("--ems-ups-text", toCssColor(cfg.text_color, "#ffffff"));
     this._card.style.setProperty("--ems-ups-on-accent", contrastColor(cfg.accent_color || "#e8c547"));
     this._title.textContent = cfg.title || "UPS";
+    const supplyState = this._state(cfg.power_supply_switch);
+    this._powerSupplyEl.textContent = supplyState?.state === "on"
+      ? "Stroomtoevoer uitschakelen"
+      : "Stroomtoevoer inschakelen";
+    this._powerSupplyEl.style.display = supplyState ? "block" : "none";
 
     const level = this._number(cfg.level_entity);
     const inputPower = this._power(cfg.input_power_entity);
@@ -2484,6 +2499,7 @@ class EmsUpsCardEditor extends HTMLElement {
         { name: "output_power_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "remaining_time_entity", selector: { entity: { domain: ["sensor"] } } },
         { name: "soh_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "power_supply_switch", selector: { entity: { domain: ["switch", "input_boolean"] } } },
         { name: "idle_level_threshold", selector: { number: { min: 0, max: 100, step: 1, mode: "box" } } },
         { name: "pass_through_threshold", selector: { number: { min: 0, max: 200, step: 1, mode: "box" } } },
         { name: "background_color", selector: { color_rgb: {} } },
@@ -2498,6 +2514,7 @@ class EmsUpsCardEditor extends HTMLElement {
         output_power_entity: "Output (ontlaadvermogen)",
         remaining_time_entity: "Resterende tijd",
         soh_entity: "State of health (%)",
+        power_supply_switch: "Stroomtoevoer aan/uit (switch)",
         idle_level_threshold: "Niet-actief vanaf niveau (%)",
         pass_through_threshold: "Marge voor doorvoer/standby (W)",
         background_color: "Achtergrondkleur",
