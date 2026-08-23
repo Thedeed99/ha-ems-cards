@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.28.0";
+const CARD_VERSION = "2.28.1";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2015,7 +2015,7 @@ class EmsPhasesCard extends HTMLElement {
       const power = this._value(cfg[`phase_${phase}_power_entity`]);
       const current = this._value(cfg[`phase_${phase}_current_entity`]);
       const voltage = this._value(cfg[`phase_${phase}_voltage_entity`]);
-      elements.power.textContent = this._format(power, "W");
+      elements.power.textContent = this._format(power, "kW");
       elements.current.textContent = this._format(current, "A");
       elements.voltage.textContent = this._format(voltage, "V");
       elements.fill.style.width = `${Math.min(100, current / max * 100)}%`;
