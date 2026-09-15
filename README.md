@@ -5,7 +5,7 @@ Dashboardkaarten voor energiebeheer in Home Assistant, in dezelfde huisstijl als
 entiteiten in de UI en kiest je eigen achtergrond-, accent- en tekstkleur.
 
 ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-2.29.2-blue.svg)
+![Version](https://img.shields.io/badge/Version-2.29.3-blue.svg)
 
 ## Kaarten
 
