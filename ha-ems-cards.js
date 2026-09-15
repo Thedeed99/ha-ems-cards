@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.29.0";
+const CARD_VERSION = "2.29.1";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2517,9 +2517,9 @@ class EmsThermalStorageCard extends EmsBaseCard {
       .outside ha-icon { --mdc-icon-size: 18px; color: var(--ems-accent); }
       .house-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 12px; align-items: stretch; }
       .house { position: relative; min-height: 230px; padding: 28px 12px 12px; background: var(--ems-tile); clip-path: polygon(50% 0, 100% 24%, 100% 100%, 0 100%, 0 24%); }
-      .house-roof { position: absolute; inset: 0 0 auto; height: 52px; border-bottom: 1px solid color-mix(in srgb, var(--ems-accent) 55%, transparent); }
+      .house-roof { position: absolute; inset: 0 0 auto; height: 52px; border-bottom: 1px solid rgba(150, 160, 156, .42); }
       .levels { position: relative; height: 100%; display: grid; grid-template-rows: repeat(3, 1fr); gap: 6px; }
-      .level { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 0; padding: 6px; border: 1px solid color-mix(in srgb, var(--ems-text) 12%, transparent); border-radius: var(--ems-radius); cursor: pointer; }
+      .level { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 0; padding: 6px; border: 1px solid rgba(150, 160, 156, .42); border-radius: var(--ems-radius); cursor: pointer; }
       .level:hover, .outside:hover, .aux-tile:hover { filter: brightness(1.15); }
       .level-name, .aux-name { font-size: .7rem; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
       .level-value, .aux-value { font-size: 1.25rem; font-weight: 700; margin-top: 2px; white-space: nowrap; }
