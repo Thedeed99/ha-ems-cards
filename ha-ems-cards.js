@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.30.0";
+const CARD_VERSION = "2.30.1";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2515,13 +2515,12 @@ class EmsThermalStorageCard extends EmsBaseCard {
       .thermal-title { font-size: 1.05rem; font-weight: 700; }
       .outside { display: flex; align-items: center; gap: 6px; font-size: .82rem; cursor: pointer; }
       .outside ha-icon { --mdc-icon-size: 18px; color: var(--ems-accent); }
-      .house-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 12px; align-items: stretch; }
-      .tank-area { display: flex; align-items: center; justify-content: center; min-height: 242px; padding: 0 14px; background: var(--ems-tile); border-radius: var(--ems-radius); }
-      .tank { position: relative; width: min(190px, 100%); height: 218px; padding: 12px 10px; box-sizing: border-box; border: 4px solid rgba(115, 128, 123, .72); border-radius: 28px 28px 22px 22px; background: linear-gradient(90deg, rgba(0,0,0,.13), transparent 18%, rgba(255,255,255,.045) 50%, transparent 82%, rgba(0,0,0,.12)); box-shadow: inset 0 0 0 2px rgba(255,255,255,.035), 0 3px 0 rgba(0,0,0,.12); }
-      .tank::before, .tank::after { content: ""; position: absolute; left: 18%; right: 18%; height: 8px; border: 3px solid rgba(115, 128, 123, .72); background: var(--ems-tile); border-radius: 50%; }
-      .tank::before { top: -10px; }
-      .tank::after { bottom: -10px; }
-      .tank-levels { position: relative; z-index: 1; height: 100%; display: grid; grid-template-rows: repeat(3, 1fr); gap: 4px; }
+      .house-wrap { display: block; }
+      .tank-area { display: flex; align-items: center; justify-content: center; min-height: 242px; padding: 12px 14px; background: var(--ems-tile); border-radius: var(--ems-radius); }
+      .tank { position: relative; width: min(190px, 100%); height: 218px; padding: 14px 10px; box-sizing: border-box; border: 5px solid rgba(20, 25, 24, .82); border-radius: 18px 18px 15px 15px; background: linear-gradient(90deg, rgba(0,0,0,.22), rgba(255,255,255,.04) 48%, rgba(0,0,0,.2)); box-shadow: inset 0 0 0 2px rgba(115, 128, 123, .38), 0 4px 0 rgba(0,0,0,.2); }
+      .tank::before { content: ""; position: absolute; left: 42%; right: 42%; top: -13px; height: 10px; border-radius: 4px 4px 0 0; background: rgba(20, 25, 24, .92); }
+      .tank::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -8px; height: 5px; border-radius: 0 0 5px 5px; background: rgba(20, 25, 24, .7); }
+      .tank-levels { position: relative; z-index: 1; height: 100%; display: grid; grid-template-rows: repeat(4, 1fr); gap: 4px; }
       .level { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 0; padding: 4px; border-top: 1px solid rgba(115, 128, 123, .48); cursor: pointer; }
       .level:last-child { border-bottom: 1px solid rgba(115, 128, 123, .48); }
       .level:hover, .outside:hover, .aux-tile:hover { filter: brightness(1.15); }
@@ -2556,7 +2555,7 @@ class EmsThermalStorageCard extends EmsBaseCard {
     const levels = document.createElement("div");
     levels.className = "tank-levels";
     this._points = [];
-    for (const [key, fallback] of [["zolder_entity", "Zolder"], ["boven_entity", "1e verdieping"], ["beneden_entity", "Begane grond"]]) {
+    for (const [key, fallback] of [["zolder_entity", "Zolder"], ["boven_entity", "1e verdieping"], ["beneden_entity", "Begane grond"], ["crawlspace_entity", "Kruipruimte"]]) {
       const nameKey = key.replace("_entity", "_name");
       const point = this._makePoint(key, cfg[nameKey] || fallback, "", "level");
       levels.appendChild(point.el);
@@ -2565,18 +2564,13 @@ class EmsThermalStorageCard extends EmsBaseCard {
     tank.appendChild(levels);
     tankArea.appendChild(tank);
     layout.appendChild(tankArea);
-    const crawlspace = this._makePoint("crawlspace_entity", cfg.crawlspace_name || "Kruipruimte", "mdi:home-floor-negative-1", "aux-tile");
-    const aux = document.createElement("div");
-    aux.className = "aux";
-    aux.appendChild(crawlspace.el);
-    layout.appendChild(aux);
     card.appendChild(layout);
     const note = document.createElement("div");
     note.className = "thermal-note";
     note.textContent = "Temperaturen in en rond het huis";
     card.appendChild(note);
     root.appendChild(card);
-    this._points.push(outside, crawlspace);
+    this._points.push(outside);
     this._built = true;
   }
 

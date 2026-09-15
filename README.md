@@ -5,7 +5,7 @@ Dashboardkaarten voor energiebeheer in Home Assistant, in dezelfde huisstijl als
 entiteiten in de UI en kiest je eigen achtergrond-, accent- en tekstkleur.
 
 ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-2.30.0-blue.svg)
+![Version](https://img.shields.io/badge/Version-2.30.1-blue.svg)
 
 ## Kaarten
 
@@ -37,7 +37,7 @@ Een temperatuurkaart met een verticaal opslagvat voor thermische opslag en comfo
 
 - Toont temperatuur beneden, boven en op zolder als drie zones in een opslagvat
 - Toont buitentemperatuur naast het huis
-- Toont de temperatuur in de kruipruimte onder/naast het huis
+- Toont de temperatuur in de kruipruimte als vierde zone in het opslagvat
 - Elke temperatuur opent de bijbehorende Home Assistant-entiteit bij aantikken
 - Alle entiteiten, decimalen en kleuren zijn instelbaar via de UI-editor
 
