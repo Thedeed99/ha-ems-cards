@@ -31,6 +31,16 @@ Vervangt de rasters met `button-card`:
 - Tikken schakelt het apparaat (of opent meer-info als er geen schakelaar is)
 - Instelbaar aantal kolommen
 
+### EMS Thermische opslag (`custom:ems-thermal-storage-card`)
+
+Een huisvormige temperatuurkaart voor thermische opslag en comfortbewaking:
+
+- Toont temperatuur beneden, boven en op zolder in een huisindeling
+- Toont buitentemperatuur naast het huis
+- Toont de temperatuur in de kruipruimte onder/naast het huis
+- Elke temperatuur opent de bijbehorende Home Assistant-entiteit bij aantikken
+- Alle entiteiten, decimalen en kleuren zijn instelbaar via de UI-editor
+
 ## Installatie
 
 1. HACS → **Custom repositories** → `https://github.com/Thedeed99/ha-ems-cards`, type **Dashboard**
@@ -76,6 +86,28 @@ Alles kan via de UI-editor. Gedeelde weergave-opties voor beide kaarten:
 | Optie | Omschrijving |
 |---|---|
 | `devices` | Lijst met `entity` (vermogen), `name`, `switch_entity`, `decimals` |
+
+### EMS Thermische opslag
+
+| Optie | Omschrijving |
+|---|---|
+| `beneden_entity` | Temperatuursensor voor beneden |
+| `boven_entity` | Temperatuursensor voor boven |
+| `zolder_entity` | Temperatuursensor voor zolder |
+| `outside_entity` | Buitentemperatuursensor |
+| `crawlspace_entity` | Temperatuursensor voor de kruipruimte |
+| `decimals` | Aantal decimalen, standaard 1 |
+
+```yaml
+type: custom:ems-thermal-storage-card
+title: Thermische opslag
+beneden_entity: sensor.woonkamer_temperatuur
+boven_entity: sensor.overloop_temperatuur
+zolder_entity: sensor.zolder_temperatuur
+outside_entity: sensor.buitentemperatuur
+crawlspace_entity: sensor.kruipruimte_temperatuur
+decimals: 1
+```
 
 ### Voorbeeld
 

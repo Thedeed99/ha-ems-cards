@@ -2486,6 +2486,152 @@ class EmsUpsCard extends HTMLElement {
   }
 }
 
+class EmsThermalStorageCard extends EmsBaseCard {
+  static getConfigElement() { return document.createElement("ems-thermal-storage-card-editor"); }
+
+  static getStubConfig() {
+    return { type: "custom:ems-thermal-storage-card", title: "Thermische opslag", ...STYLE_DEFAULTS };
+  }
+
+  getCardSize() { return 5; }
+
+  _render() {
+    if (!this._hass) return;
+    if (!this._built) this._build();
+    for (const point of this._points) {
+      point.value.textContent = this._formatValue(this._config[point.key], Number(this._config.decimals) || 1);
+    }
+  }
+
+  _build() {
+    const cfg = this._config;
+    const root = this.shadowRoot;
+    root.innerHTML = "";
+    const style = document.createElement("style");
+    style.textContent = `
+      ${SHARED_CSS}
+      ha-card { padding: 16px; }
+      .thermal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+      .thermal-title { font-size: 1.05rem; font-weight: 700; }
+      .outside { display: flex; align-items: center; gap: 6px; font-size: .82rem; cursor: pointer; }
+      .outside ha-icon { --mdc-icon-size: 18px; color: var(--ems-accent); }
+      .house-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 12px; align-items: stretch; }
+      .house { position: relative; min-height: 230px; padding: 28px 12px 12px; background: var(--ems-tile); clip-path: polygon(50% 0, 100% 24%, 100% 100%, 0 100%, 0 24%); }
+      .house-roof { position: absolute; inset: 0 0 auto; height: 52px; border-bottom: 1px solid color-mix(in srgb, var(--ems-accent) 55%, transparent); }
+      .levels { position: relative; height: 100%; display: grid; grid-template-rows: repeat(3, 1fr); gap: 6px; }
+      .level { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 0; padding: 6px; border: 1px solid color-mix(in srgb, var(--ems-text) 12%, transparent); border-radius: var(--ems-radius); cursor: pointer; }
+      .level:hover, .outside:hover, .aux-tile:hover { filter: brightness(1.15); }
+      .level-name, .aux-name { font-size: .7rem; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .level-value, .aux-value { font-size: 1.25rem; font-weight: 700; margin-top: 2px; white-space: nowrap; }
+      .aux { display: grid; grid-template-rows: 1fr; gap: 8px; }
+      .aux-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; padding: 8px 4px; background: var(--ems-tile); border-radius: var(--ems-radius); text-align: center; cursor: pointer; }
+      .aux-icon { color: var(--ems-accent); margin-bottom: 4px; }
+      .aux-icon ha-icon { --mdc-icon-size: 22px; }
+      .thermal-note { margin-top: 9px; text-align: center; font-size: .68rem; opacity: .5; }
+    `;
+    root.appendChild(style);
+
+    const card = document.createElement("ha-card");
+    this._applyColors(card);
+    const head = document.createElement("div");
+    head.className = "thermal-head";
+    const title = document.createElement("div");
+    title.className = "thermal-title";
+    title.textContent = cfg.title || "Thermische opslag";
+    head.appendChild(title);
+    const outside = this._makePoint("outside_entity", cfg.outside_name || "Buiten", "mdi:weather-partly-cloudy", "outside");
+    head.appendChild(outside.el);
+    card.appendChild(head);
+
+    const layout = document.createElement("div");
+    layout.className = "house-wrap";
+    const house = document.createElement("div");
+    house.className = "house";
+    const roof = document.createElement("div");
+    roof.className = "house-roof";
+    house.appendChild(roof);
+    const levels = document.createElement("div");
+    levels.className = "levels";
+    this._points = [];
+    for (const [key, fallback] of [["zolder_entity", "Zolder"], ["boven_entity", "Boven"], ["beneden_entity", "Beneden"]]) {
+      const nameKey = key.replace("_entity", "_name");
+      const point = this._makePoint(key, cfg[nameKey] || fallback, "", "level");
+      levels.appendChild(point.el);
+      this._points.push(point);
+    }
+    house.appendChild(levels);
+    layout.appendChild(house);
+    const crawlspace = this._makePoint("crawlspace_entity", cfg.crawlspace_name || "Kruipruimte", "mdi:home-floor-negative-1", "aux-tile");
+    const aux = document.createElement("div");
+    aux.className = "aux";
+    aux.appendChild(crawlspace.el);
+    layout.appendChild(aux);
+    card.appendChild(layout);
+    const note = document.createElement("div");
+    note.className = "thermal-note";
+    note.textContent = "Temperaturen in en rond het huis";
+    card.appendChild(note);
+    root.appendChild(card);
+    this._points.push(outside, crawlspace);
+    this._built = true;
+  }
+
+  _makePoint(key, label, icon, className) {
+    const el = document.createElement("div");
+    el.className = className;
+    if (icon) {
+      const iconEl = document.createElement("div");
+      iconEl.className = "aux-icon";
+      iconEl.innerHTML = `<ha-icon icon="${icon}"></ha-icon>`;
+      el.appendChild(iconEl);
+    }
+    const name = document.createElement("div");
+    name.className = className === "level" ? "level-name" : "aux-name";
+    name.textContent = label;
+    const value = document.createElement("div");
+    value.className = className === "level" ? "level-value" : "aux-value";
+    el.append(name, value);
+    el.addEventListener("click", () => this._fireMoreInfo(this._config[key]));
+    return { key, el, value };
+  }
+}
+
+class EmsThermalStorageCardEditor extends HTMLElement {
+  setConfig(config) { this._config = { ...STYLE_DEFAULTS, ...config }; this._render(); }
+  set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.schema = [
+        { name: "title", selector: { text: {} } },
+        { name: "beneden_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "boven_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "zolder_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "outside_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "crawlspace_entity", selector: { entity: { domain: ["sensor"] } } },
+        { name: "decimals", selector: { number: { min: 0, max: 2, step: 1, mode: "box" } } },
+        { name: "background_color", selector: { color_rgb: {} } },
+        { name: "accent_color", selector: { color_rgb: {} } },
+        { name: "text_color", selector: { color_rgb: {} } },
+        { name: "tile_color", selector: { color_rgb: {} } },
+      ];
+      const labels = {
+        title: "Titel", beneden_entity: "Temperatuur beneden", boven_entity: "Temperatuur boven",
+        zolder_entity: "Temperatuur zolder", outside_entity: "Buitentemperatuur",
+        crawlspace_entity: "Temperatuur kruipruimte", decimals: "Decimalen",
+        background_color: "Achtergrondkleur", accent_color: "Accentkleur", text_color: "Tekstkleur", tile_color: "Tegelkleur",
+      };
+      this._form.computeLabel = (field) => labels[field.name] || field.name;
+      this._form.addEventListener("value-changed", (event) => this.dispatchEvent(new CustomEvent("config-changed", {
+        detail: { config: { type: "custom:ems-thermal-storage-card", ...event.detail.value } }, bubbles: true, composed: true,
+      })));
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+  }
+}
+
 class EmsUpsCardEditor extends HTMLElement {
   setConfig(config) { this._config = { ...STYLE_DEFAULTS, ...config }; this._render(); }
   set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
@@ -2546,6 +2692,8 @@ customElements.define("ems-devices-card", EmsDevicesCard);
 customElements.define("ems-devices-card-editor", EmsDevicesCardEditor);
 customElements.define("ems-consumers-card", EmsConsumersCard);
 customElements.define("ems-consumers-card-editor", EmsConsumersCardEditor);
+customElements.define("ems-thermal-storage-card", EmsThermalStorageCard);
+customElements.define("ems-thermal-storage-card-editor", EmsThermalStorageCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push(
@@ -2560,6 +2708,13 @@ window.customCards.push(
     type: "ems-devices-card",
     name: "EMS Apparaten",
     description: "Raster met vermogen per apparaat, tik om te schakelen.",
+    preview: true,
+    documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
+  },
+  {
+    type: "ems-thermal-storage-card",
+    name: "EMS Thermische opslag",
+    description: "Temperaturen in huis, buiten en in de kruipruimte in een huisindeling.",
     preview: true,
     documentationURL: "https://github.com/Thedeed99/ha-ems-cards",
   },
