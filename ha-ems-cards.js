@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.30.1";
+const CARD_VERSION = "2.30.2";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
@@ -2516,8 +2516,8 @@ class EmsThermalStorageCard extends EmsBaseCard {
       .outside { display: flex; align-items: center; gap: 6px; font-size: .82rem; cursor: pointer; }
       .outside ha-icon { --mdc-icon-size: 18px; color: var(--ems-accent); }
       .house-wrap { display: block; }
-      .tank-area { display: flex; align-items: center; justify-content: center; min-height: 242px; padding: 12px 14px; background: var(--ems-tile); border-radius: var(--ems-radius); }
-      .tank { position: relative; width: min(190px, 100%); height: 218px; padding: 14px 10px; box-sizing: border-box; border: 5px solid rgba(20, 25, 24, .82); border-radius: 18px 18px 15px 15px; background: linear-gradient(90deg, rgba(0,0,0,.22), rgba(255,255,255,.04) 48%, rgba(0,0,0,.2)); box-shadow: inset 0 0 0 2px rgba(115, 128, 123, .38), 0 4px 0 rgba(0,0,0,.2); }
+      .tank-area { display: flex; align-items: center; justify-content: center; min-height: 278px; padding: 14px; background: var(--ems-tile); border-radius: var(--ems-radius); }
+      .tank { position: relative; width: min(210px, 100%); height: 258px; padding: 14px 10px; box-sizing: border-box; border: 5px solid rgba(20, 25, 24, .82); border-radius: 18px 18px 15px 15px; background: linear-gradient(90deg, rgba(0,0,0,.22), rgba(255,255,255,.04) 48%, rgba(0,0,0,.2)); box-shadow: inset 0 0 0 2px rgba(115, 128, 123, .38), 0 4px 0 rgba(0,0,0,.2); }
       .tank::before { content: ""; position: absolute; left: 42%; right: 42%; top: -13px; height: 10px; border-radius: 4px 4px 0 0; background: rgba(20, 25, 24, .92); }
       .tank::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -8px; height: 5px; border-radius: 0 0 5px 5px; background: rgba(20, 25, 24, .7); }
       .tank-levels { position: relative; z-index: 1; height: 100%; display: grid; grid-template-rows: repeat(4, 1fr); gap: 4px; }
