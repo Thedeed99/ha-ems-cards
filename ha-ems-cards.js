@@ -4,7 +4,7 @@
  * en volledige configuratie via de Lovelace UI-editor.
  */
 
-const CARD_VERSION = "2.28.1";
+const CARD_VERSION = "2.29.0";
 
 console.info(
   `%c HA-EMS-CARDS %c v${CARD_VERSION} `,
